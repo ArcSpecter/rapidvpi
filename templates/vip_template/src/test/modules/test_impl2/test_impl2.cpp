@@ -31,7 +31,7 @@ namespace test {
   }
 
   TestImpl2::RunTask TestImpl2::run() {
-    auto awaiter = test.getCoWrite(0); // Use the `test` reference
+    auto awaiter = test.getCoWrite(0);
     awaiter.write("clk", 0);
     awaiter.write("a", 0);
     awaiter.write("b", 0);

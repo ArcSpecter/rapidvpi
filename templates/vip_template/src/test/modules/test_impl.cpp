@@ -42,7 +42,7 @@ namespace test {
   }
 
   TestImpl::RunTask TestImpl::run4() {
-    co_await test.getCoWrite(7.25); // Use the `test` reference
+    co_await test.getCoWrite(7.25);
 
     auto awchange = test.getCoChange("clk", 1); // get next clk rising change
     co_await awchange;

@@ -50,6 +50,4 @@ namespace test {
   };
 } // namespace test
 
-
-
 #endif // DUT_TOP_TEST_HPP
