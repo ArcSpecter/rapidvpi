@@ -25,10 +25,10 @@
 module dut_top #(
     parameter integer WIDTH = 40
 ) (
-    input clk,
-    input rst,
-    input [WIDTH-1:0] a,
-    input [WIDTH-1:0] b,
+    input wire clk,
+    input wire rst,
+    input wire [WIDTH-1:0] a,
+    input wire [WIDTH-1:0] b,
     output logic [WIDTH-1:0] c
 );
 
