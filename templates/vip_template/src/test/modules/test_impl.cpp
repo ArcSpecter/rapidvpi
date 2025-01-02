@@ -53,7 +53,7 @@ namespace test {
     co_await awaiter2;
 
     auto awRd = test.getCoRead(0);
-    awRd.read("c"); // this will create placeholder of key,value pair for read "c"
+    awRd.read("c");
     co_await awRd;
     std::string value_hex = awRd.getHexStr("c"); // Expecting hex output
     std::string value_bin = awRd.getBinStr("c"); // Binary output

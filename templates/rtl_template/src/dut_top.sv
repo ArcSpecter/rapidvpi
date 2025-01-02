@@ -32,7 +32,7 @@ module dut_top #(
     output logic [WIDTH-1:0] c
 );
 
-  always_ff @(posedge clk, rst) begin
+  always_ff @(posedge clk, negedge rst) begin
     if (!rst) begin
       c <= 0;
     end else begin

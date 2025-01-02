@@ -4,6 +4,28 @@
 
 # RapidVPI
 Blazingly fast, modern C++ API using coroutines for efficient RTL verification and co-simulation via the VPI interface.
+## Table of Contents
+- [Introduction](#introduction)
+- [Why RapidVPI?](#why-rapidvpi)
+- [Prerequisites](#prerequisites)
+- [Installation](#installation)
+- [Quick start](#quick-start)
+- [Writing RapidVPI test code](#writing-rapidvpi-test-code)
+- [RapidVPI Internal Architecture](#rapidvpi-internal-architecture)
+- [Organization of RapidVPI Test Project](#organization-of-rapidvpi-test-project)
+- [CMake Custom Commands for rtl_template](#cmake-custom-commands-for-rtl_template)
+- [RapidVPI API Functions](#rapidvpi-api-functions)
+  - [getCoWrite(delay)](#getcowritedelay)
+  - [write("port", value)](#writeport-value)
+  - [force("port", value)](#forceport-value)
+  - [release("port")](#releaseport)
+  - [getCoChange("port", value[optional])](#getcochangeport-valueoptional)
+  - [getCoRead("port")](#getcoreadport)
+- [Usage of RapidVPI](#usage-of-rapidvpi)
+
+
+
+
 ### Introduction
 
 The RapidVPI API allows you to write modern C++ code for verification and co-simulation of digital RTL HDL designs using any simulator which supports VPI interface. Currently, as of now this library was tested with Iverilog. The API abstracts many of the VPI related boilerplate and tedious mechanisms and implements all the necessary signal driving and reading via the convenient coroutine mechanism native to C++ since version 20. User just creates the coroutine awaitable object, adds operations to it such as read, write and suspends it with co_await statement.
@@ -11,10 +33,95 @@ The RapidVPI API allows you to write modern C++ code for verification and co-sim
 ### Why RapidVPI?
 The motivation for the development of this library was the ability to use all the flexible and advanced features of modern C++ during the RTL verification or co-simulation since verification itself is a software task and should use the proper software design tool such as C++; SystemVerilog is not a tool which is as powerful as C++ when it comes to modeling some advanced complex system. Additionally, SystemVerilog running with all of its features requires a very expensive license for the EDA tools, such a basic feature as randomization of variables in a class for example is not supported even in a lower tier paid simulators. The VPI interface on the other hand is supported by most lowest tier packaged commercial simulators, and of course it is supported by Iverilog which is a free and fast tool for Verilog simulation.
 
+### Prerequisites
+ninja, gcc >14.2, cmake >3.1, iverilog (tested with), gtkwave (optional)
+
 ### Installation
+Get the repository, compile and install:
+```bash
+git clone https://github.com/ArcSpecter/rapidvpi.git
+cd ./rapidvpi/main
+mkdir -p cmake-build-release && cd cmake-build-release
+cmake -G Ninja -DCMAKE_BUILD_TYPE=Release ..
+cmake --build . --target rapidvpi.vpi -j$(nproc) && cd ..
+sudo cmake --install ./cmake-build-release
+```
+Above will install the library and its .so files and necessary headers in appropriate locations (/usr/local/src, /usrc/local/lib, /usr/local/include) in a system, you should see output like this:
+```
+-- Install configuration: "Release"
+-- Up-to-date: /usr/local/include/rapidvpi/core
+-- Installing: /usr/local/include/rapidvpi/core/core.hpp
+-- Up-to-date: /usr/local/include/rapidvpi/scheduler
+-- Installing: /usr/local/include/rapidvpi/scheduler/scheduler.hpp
+-- Up-to-date: /usr/local/include/rapidvpi/testmanager
+-- Installing: /usr/local/include/rapidvpi/testmanager/testmanager.hpp
+-- Up-to-date: /usr/local/include/rapidvpi/testbase
+-- Installing: /usr/local/include/rapidvpi/testbase/testbase.hpp
+-- Up-to-date: /usr/local/src/rapidvpi/core
+-- Installing: /usr/local/src/rapidvpi/core/core.cpp
+-- Up-to-date: /usr/local/src/rapidvpi/scheduler
+-- Installing: /usr/local/src/rapidvpi/scheduler/scheduler.cpp
+-- Up-to-date: /usr/local/src/rapidvpi/testmanager
+-- Installing: /usr/local/src/rapidvpi/testmanager/testmanager.cpp
+-- Up-to-date: /usr/local/src/rapidvpi/testbase
+-- Installing: /usr/local/src/rapidvpi/testbase/awaitchange.cpp
+-- Installing: /usr/local/src/rapidvpi/testbase/awaitread.cpp
+-- Installing: /usr/local/src/rapidvpi/testbase/awaitwrite.cpp
+-- Installing: /usr/local/src/rapidvpi/testbase/testbase.cpp
+-- Installing: /usr/local/src/rapidvpi/testbase/utility.cpp
+-- Installing: /usr/local/src/rapidvpi/entry.cpp
+-- Installing: /usr/local/lib/rapidvpi/librapidvpi.vpi.so
+-- Up-to-date: /usr/local/lib/cmake/rapidvpi/rapidvpiTargets.cmake
+-- Up-to-date: /usr/local/lib/cmake/rapidvpi/rapidvpiTargets-release.cmake
+-- Up-to-date: /usr/local/lib/cmake/rapidvpi/rapidvpiConfig.cmake
+-- Up-to-date: /usr/local/lib/cmake/rapidvpi/rapidvpiConfigVersion.cmake
+```
+
+### Quick start
+Build the vip_template shared co-simulation .so file:
+```
+cd ./vip_template
+mkdir -p cmake-build-debug && cd cmake-build-debug
+cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug ..
+cmake --build . --target vip_template -j$(nproc)
+```
+Above will produce `libvip_template.so` file
+
+Next we navigate to rtl_template, compile the RTL and run the co-simulation with .so file built previously under vip_template:
+```
+cd ../../rtl_template
+mkdir build
+cd ./build
+cmake .. && cd ..
+cmake --build ./build/ --target sim_compile
+cmake --build ./build/ --target sim_run
+```
+
+And get the output of the simulation as well as recorded test.vcd inside ./build/sim folder under ./rtl_template:
+```
+Top level DUT: dut_top
+VCD info: dumpfile ./sim/test.vcd opened for output.
+Awaited Numeric value for the 'c' is : c000000007
+Awaited Hex String value for the 'c' is : C000000007
+Awaited Bin String value for the 'c' is : 0000000000000000000000001100000000000000000000000000000000000111
+numeric value of 'c' is: c000000007
+hex string is: C000000007
+bin string is: 0000000000000000000000001100000000000000000000000000000000000111
+some_func() called
+value received during  test creation: 42
+[100%] Built target sim_run
+```
+
+Alternatively you can just run automated script located within ./rapidvpi/templates folder:
+```
+chmod +x ./quick_start.sh
+./quick_start.sh
+```
+
+Assumption is that everyone has his own CMake plugin in IDEs like VSCode and one would just run automated commands from GUI mode. Also, some people might just use IDEs like CLion for working on C++ portion of verification like vip_template. I personally use CLion for it.
 
 
-### What does writing RapidVPI test code look like?
+### Writing RapidVPI test code
 For example, in a below code fragment we are looking at scenario of some module's simulation start. What we do is, set all inputs to zero by default, then after 10 ns we release the reset. Then we show forcing port "c" of DUT to some value and releasing that force 2 ns after. In order to get that job done we have a run() coroutine declared and its implementation shown in the code.
 
 In this current example we are writing values to DUT ports. In order to write a value one first creates a writer awaitable object using the getCoWrite(), the argument to getCoWrite is basically a delay (by default in nanoseconds) from the current timeline to when the write of all the signals should occur. Once that event occurs, the code proceeds below the line `co_await awaiter`, after that all the scheduled write events get automatically cleared for the `awaiter` object (which by the way can have any name). 
@@ -115,7 +222,7 @@ User also does not need to worry about the race conditions between writing value
 
 User just has to maintain certain very minimalistic boiler plate and code structure when creating his tests as explained in next section.
 
-### Organization of RapidVPI test code
+### Organization of RapidVPI test project
 Now let's take a closer, more detailed look at some example. In this case, let the example be simple. Assume that our RTL is just a clocked adder with the following SystemVerilog code:
 ```verilog
 `default_nettype none `timescale 1 ns / 1 ps
@@ -654,6 +761,124 @@ For example, after running `sim_wave` command we can plot the signals and see th
 
 More commands and examples will be added later.
 
+The key thing when working with library is to remember there are three types of awaitable objects for user coroutines:
+
+1. write awaitable - for scheduling write operations
+2. read awaitable - for scheduling read operations
+3. change awaitable - for scheduling port value change operations
+
 ## RapidVPI API functions
 In this section we will briefly list the functions for the library and how are they used.
 
+### getCoWrite(delay)
+Returns an AwaitWrite object with adjusted delay for co-routine event scheduling.
+This function creates an AwaitWrite object, adjusting the provided delay according to the relevant time unit conversion factor and simulation time unit.
+
+Params:
+delay — The delay in the specified time unit before the write operation is executed.
+
+
+Returns:
+AwaitWrite object configured with the adjusted delay.
+
+The user is using this function like:
+```c++
+auto awaiter = test.getCoWrite(delay);
+```
+Where `delay` is by default in ns. If user wants other delay unit, like ms, he can use templated version of function:
+```c++
+auto awaiter = test.getCoWrite<ms>(delay);
+```
+The valid delay units are: ms, us, ns (default), ps
+
+### write("port", value)
+Adds write operation to the action queue of the write awaitable type. For example, user can do:
+```c++
+    auto awaiter = test.getCoWrite(delay);
+    awaiter.write("clk", 0);
+    awaiter.write("a", 0);
+    awaiter.write("b", 0);
+    awaiter.write("rst", 0);
+    co_await awaiter;
+```
+Here, he first needs to obtain awaitable object with `getCoWrite()`, then for that object he can add write operations as shown above for various ports. After he is done adding writes which he wants to be done after `delay` time, he suspends the user coroutine using `co_await` statement, and the code below that line will execute once the coroutine is resumed.
+
+### force("port", value)
+This function adds action of forcing certain port to some value for awaitable object of type write, typical usage is shown below:
+```c++
+    auto await_force = test.getCoWrite(12);
+    await_force.force("c", 0xabcd);
+    co_await await_force;
+```
+The awaitable object created, force action for port "c" added, and signal will be forced 12 ns after current timeline.
+
+### release("port")
+Used to release forcing of any value on certain DUT port. Used as below:
+```c++
+    auto await_release = test.getCoWrite(2);
+    await_release.release("c");
+    co_await await_release;
+```
+Awaitable object obtained with `getCoWrite()`, release action added to the queue of the awaitable object, coroutine suspended with `co_await` and execution of code continues after simulator internally released that signal.
+
+### getCoChange("port", value[optional])
+Returns an AwaitChange object for monitoring a specified net until a target value is reached.
+This function creates an AwaitChange object that allows the coroutine to wait until the specified net changes to the provided target value.
+
+
+Params:
+net — The name of the net to be monitored for changes.
+target_value — The target value that the net is expected to change to. This is optional value, if it is not used, the change for given port will be monitored for any value.
+
+
+Returns:
+AwaitChange object configured to monitor the specified net for the target value.
+
+The function is used in the following way:
+```c++
+    auto awchange = test.getCoChange("c"); // Use the `test` reference
+    co_await awchange;
+
+    printf("New value for port 'c' is: %llx\n", awchange.getNum());
+    printf("New value for port 'c' is: %s\n", awchange.getHexStr().c_str());
+    printf("New value for port 'c' is: %s\n", awchange.getBinStr().c_str());
+```
+User obtains the awaitable object of type change, after that the `co_await` initiates the change monitoring, once that occurs the line us inblocked and code executes further where we print the value.
+
+The following member functions of change awaitable can be used to obtain the value which is changed for target port:
+1. `getNum()` - returns numeric (64 bits or less) value of the port monitored for a change
+2. `getHexStr()` - returns Hex string value of the port monitored for change
+3. `getBinStr()` - returns Bin string value of the port monitored for change
+
+### getCoRead("port")
+Returns an AwaitRead object with adjusted delay for co-routine event scheduling.
+This function creates an AwaitRead object, adjusting the provided delay according to the relevant time unit conversion factor and simulation time unit.
+
+
+Params:
+delay — The delay in the specified time unit before the read operation is executed.
+
+
+Returns:
+AwaitRead object configured with the adjusted delay.
+
+The function used to obtain awaitable object of type read, and schedule read operations for ports of interest as shown below:
+```c++
+    auto awRd = test.getCoRead(0);
+    awRd.read("c");
+    co_await awRd;
+    std::string value_hex = awRd.getHexStr("c"); // Expecting hex output
+    std::string value_bin = awRd.getBinStr("c"); // Binary output
+    printf("numeric value of 'c' is: %llx\n", awRd.getNum("c"));
+    printf("hex string is: %s\n", value_hex.c_str());
+    printf("bin string is: %s\n", value_bin.c_str());
+```
+After the awaitable object is ready, we add read operations to it and suspend coroutine with `co_await` again. Once it is unblocked we can access the `awRd` object and extract numeric or string values. Same member functions for read awaitable objects are available:
+1. `getNum()` - returns numeric (64 bits or less) value of the port monitored for a change
+2. `getHexStr()` - returns Hex string value of the port monitored for change
+3. `getBinStr()` - returns Bin string value of the port monitored for change
+
+### Usage of RapidVPI
+This is a fresh design of such an API, so if there are any bugs you encounter or stuck in the middle of the workflow for setting things up, create an issue and I can possibly help and guide on proper and effective usage of this tool.
+
+The support for other simulators, as well as additional design flow related to FPGAs of various families might be added to templates soon.
