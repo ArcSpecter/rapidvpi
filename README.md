@@ -37,6 +37,15 @@ The motivation for the development of this library was the ability to use all th
 ninja, gcc >14.2, cmake >3.1, iverilog (tested with), gtkwave (optional)
 
 ### Installation
+The following environment variables must be set:
+VPI_LIB_DIR - pointing to the library location for VPI (typically where your simulator installed)
+VPI_INCLUDE_DIR - pointing to the location of vpi_user.h (within installation folder of your simulator as well)
+
+In the current case since Iverilog was used, those locations were:
+VPI_LIB_DIR=/path/to/iverilog/libveriuser
+VPI_INCLUDE_DIR=/path/to/iverilog
+
+
 Get the repository, compile and install:
 ```bash
 git clone https://github.com/ArcSpecter/rapidvpi.git
