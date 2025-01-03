@@ -190,7 +190,7 @@ Our printout would look like:
 [build] bin string is: 0000000000000000000000001100000000000000000000000000000000000111
 ```
 
-Let's look at another example of waitinf for some port/signal value to change or waiting for a cahnge of port to specific value.
+Let's look at another example of waitinf for some port/signal value to change or waiting for a change of port to specific value.
 ```c++
     auto awchange = test.getCoChange("clk", 1); // get next clk rising change
     co_await awchange;
