@@ -36,7 +36,6 @@
 
 
 namespace test {
-
   typedef struct s_write_value {
     std::string strValue;
     unsigned long long ullValue;
@@ -105,7 +104,7 @@ namespace test {
       printf("Top level DUT: %s\n", dutName.c_str());
     }
 
-    virtual void initNets() = 0;  // Force derived classes to implement
+    virtual void initNets() = 0; // Force derived classes to implement
 
 
     // Function for updating simulation time unit
@@ -274,6 +273,94 @@ namespace test {
       std::coroutine_handle<promise_type> handle;
     };
 
+
+    /**
+     * @struct RunUserTask
+     *
+     * @brief Provides management of a coroutine for executing user-defined tasks with parent-child coroutine relationships.
+     *
+     * This structure represents a coroutine adapter that tracks parent coroutine handles and manages task execution flow.
+     * The associated promise type ensures proper initialization, suspension, resumption, and destruction of the coroutine.
+     * It also facilitates awaiting of child coroutines by the parent coroutine.
+     */
+    struct RunUserTask {
+      struct promise_type {
+        // We'll keep track of the parent handle so we can resume it later
+        std::coroutine_handle<> parentHandle;
+
+        // Create the coroutine object
+        RunUserTask get_return_object() {
+          return RunUserTask{std::coroutine_handle<promise_type>::from_promise(*this)};
+        }
+
+        // Start suspended
+        std::suspend_always initial_suspend() noexcept {
+          return {};
+        }
+
+        // In final_suspend, resume the parent (if valid)
+        auto final_suspend() noexcept {
+          struct FinalAwaiter {
+            bool await_ready() const noexcept { return false; }
+            // Resume the parent handle stored in promise_type when the child finishes
+            void await_suspend(std::coroutine_handle<promise_type> h) noexcept {
+              auto& promise = h.promise();
+              if (promise.parentHandle) {
+                promise.parentHandle.resume();
+              }
+            }
+
+            void await_resume() noexcept {
+            }
+          };
+          return FinalAwaiter{};
+        }
+
+        // Standard boilerplate
+        void return_void() {
+        }
+
+        void unhandled_exception() {
+          std::terminate();
+        }
+      };
+
+      using Handle = std::coroutine_handle<promise_type>;
+      Handle handle;
+
+      explicit RunUserTask(Handle h) : handle(h) {
+        if (!h) {
+          std::terminate();
+        }
+      }
+
+      ~RunUserTask() {
+        if (handle) {
+          handle.destroy();
+        }
+      }
+
+      // The operator co_await will track the parent's handle and then resume this child
+      auto operator co_await() noexcept {
+        struct Awaiter {
+          Handle childHandle;
+          bool await_ready() const noexcept { return false; }
+
+          // Save caller's handle, resume child, so child can eventually resume caller
+          void await_suspend(std::coroutine_handle<> caller) noexcept {
+            // Store the parent's handle so final_suspend can resume it
+            childHandle.promise().parentHandle = caller;
+            childHandle.resume();
+          }
+
+          void await_resume() noexcept {
+          }
+        };
+        return Awaiter{handle};
+      }
+    };
+
+
     /**
      * @brief Returns an AwaitWrite object with adjusted delay for co-routine event scheduling.
      *
@@ -377,6 +464,5 @@ namespace test {
     double sim_time_unit; // simulation time unit
     std::unordered_map<std::string, t_netmap_value> netMap; // [key, value] list of DUT signals
   };
-
 }
 #endif //DUT_TOP_TESTBASE_HPP
