@@ -29,6 +29,20 @@ namespace test {
     test.registerTest("run4", [this]() { return this->run4().handle; });
   }
 
+  // User coroutines
+  TestImpl2::RunUserTask TestImpl::clock(const int n, const int edge) const {
+    for (int i = 0; i < n; ++i) {
+      // Wait for the clk signal to change to the given edge value
+      co_await test.getCoChange("clk", edge);
+    }
+    co_return;
+  }
+
+  TestImpl2::RunUserTask TestImpl::delay_ns(const double delay) const {
+    co_await test.getCoWrite(delay);
+    co_return;
+  }
+
   TestImpl::RunTask TestImpl::run3() {
     auto awchange = test.getCoChange("c"); // Use the `test` reference
     co_await awchange;
@@ -46,6 +60,8 @@ namespace test {
 
     auto awchange = test.getCoChange("clk", 1); // get next clk rising change
     co_await awchange;
+    double aw_change_time = awchange.getTime<ns>();
+    printf("Read time at clk=1 change is: %f ns\n", aw_change_time);
 
     auto awaiter2 = test.getCoWrite(0); // write at that clk edge
     awaiter2.write("b", 0xc000000000);
@@ -60,9 +76,30 @@ namespace test {
     printf("numeric value of 'c' is: %llx\n", awRd.getNum("c"));
     printf("hex string is: %s\n", value_hex.c_str());
     printf("bin string is: %s\n", value_bin.c_str());
+    double read_time = awRd.getTime<ns>();
+    printf("Read time is: %f ns\n", read_time);
 
+    // Here goes example of user coroutines
+    co_await delay_ns(3.3);
+
+    // Now let's read the current time
+    auto tread = test.getCoRead(0);
+    co_await tread;
+    double tread_val = tread.getTime<ns>();
+    printf("Read time after delay: %f ns\n", tread_val);
+
+    co_await clock(); // Wait just next rising edge
+
+    // Let's read time again
+    auto tread2 = test.getCoRead(0);
+    co_await tread2;
+    double tread_val2 = tread2.getTime<ns>();
+    printf("Read time after next clock: %f ns\n", tread_val2);
+
+    // Example of accessing test function in upper Test class
     test.some_func();
     printf("value received during  test creation: %d\n", x);
+
 
     co_return;
   }

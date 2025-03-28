@@ -31,6 +31,9 @@ namespace test {
   class TestImpl2 {
   public:
     using RunTask = TestBase::RunTask;
+    using AwaitWrite = TestBase::AwaitWrite;
+    using AwaitChange = TestBase::AwaitChange;
+    using RunUserTask = TestBase::RunUserTask;
     explicit TestImpl2(Test& base);
 
     // User test coroutines

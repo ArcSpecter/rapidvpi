@@ -14,13 +14,14 @@ Blazingly fast, modern C++ API using coroutines for efficient RTL verification a
 - [RapidVPI Internal Architecture](#rapidvpi-internal-architecture)
 - [Organization of RapidVPI Test Project](#organization-of-rapidvpi-test-project)
 - [CMake Custom Commands for rtl_template](#cmake-custom-commands-for-rtl_template)
-- [RapidVPI API Functions](#rapidvpi-api-functions)
+- [RapidVPI API coroutines](#rapidvpi-api-coroutines)
   - [getCoWrite(delay)](#getcowritedelay)
   - [write("port", value)](#writeport-value)
   - [force("port", value)](#forceport-value)
   - [release("port")](#releaseport)
   - [getCoChange("port", value[optional])](#getcochangeport-valueoptional)
   - [getCoRead("port")](#getcoreadport)
+- [User coroutines](#user-coroutines)
 - [Usage of RapidVPI](#usage-of-rapidvpi)
 
 
@@ -776,7 +777,7 @@ The key thing when working with library is to remember there are three types of 
 2. read awaitable - for scheduling read operations
 3. change awaitable - for scheduling port value change operations
 
-## RapidVPI API functions
+## RapidVPI API coroutines
 In this section we will briefly list the functions for the library and how are they used.
 
 ### getCoWrite(delay)
@@ -886,6 +887,47 @@ After the awaitable object is ready, we add read operations to it and suspend co
 1. `getNum()` - returns numeric (64 bits or less) value of the port monitored for a change
 2. `getHexStr()` - returns Hex string value of the port monitored for change
 3. `getBinStr()` - returns Bin string value of the port monitored for change
+
+### User coroutines
+A lot of times there is a need to abstract the coroutines doing some repetetive task. Later on those coroutines can be called inside the main test coroutines. The abstracted user coroutines will have a type `RunUserTask` unlike the default `RunTask` RapidVPI coroutines. See with the following example. Say we want to write down a coroutine which would be basically waiting on the next clock edge N times and the clock edge can be either rising or falling. We can declare the user coroutine as following inside `test_impl.hpp`:
+```cpp
+    // Auxiliary coroutines
+    RunUserTask clock(int n = 1, int edge = 1) const;
+```
+And in the `test_impl.cpp` we can have the following implementation:
+```cpp
+  // User coroutines
+  TestImpl2::RunUserTask TestImpl::clock(const int n, const int edge) const {
+    for (int i = 0; i < n; ++i) {
+      // Wait for the clk signal to change to the given edge value
+      co_await test.getCoChange("clk", edge);
+    }
+    co_return;
+  }
+```
+
+Now we can call this as:
+```c++
+ co_await clock();
+```
+inside the `run4()` coroutine. By default without any arguments the `clock()` coroutine just waits for the next rising edge. This is very helpful since user now can create his complex coroutines which will be of type `RunUserTask` and call them inside main `RunTask` type coroutines belonging to the main test.
+
+For some smaller but yet repetetive tasks user can utilize the C++ lambda functions to abstract repetetive actions, for example inside main `run()` task we can see this:
+```cpp
+    // Example of lambda function
+    auto resetVals = [&]()
+    {
+      auto awaiter = test.getCoWrite(0);
+      awaiter.write("clk", 0);
+      awaiter.write("a", 0);
+      awaiter.write("b", 0);
+      awaiter.write("rst", 0);
+      return awaiter;
+    };
+
+    co_await resetVals(); // Now we can just call this if above piece of code must be repeated many times
+```
+
 
 ### Usage of RapidVPI
 This is a fresh design of such an API, so if there are any bugs you encounter or stuck in the middle of the workflow for setting things up, create an issue and I can possibly help and guide on proper and effective usage of this tool.

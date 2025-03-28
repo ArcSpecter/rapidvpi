@@ -31,14 +31,21 @@ namespace test {
   }
 
   TestImpl2::RunTask TestImpl2::run() {
-    auto awaiter = test.getCoWrite(0);
-    awaiter.write("clk", 0);
-    awaiter.write("a", 0);
-    awaiter.write("b", 0);
-    awaiter.write("rst", 0);
-    co_await awaiter;
+    // Example of lambda function
+    auto resetVals = [&]()
+    {
+      auto awaiter = test.getCoWrite(0);
+      awaiter.write("clk", 0);
+      awaiter.write("a", 0);
+      awaiter.write("b", 0);
+      awaiter.write("rst", 0);
+      return awaiter;
+    };
 
-    awaiter.setDelay(10);
+    co_await resetVals();
+
+    auto awaiter = test.getCoWrite(0);
+    awaiter.setDelay<us>(0.01);
     awaiter.write("rst", 1);
     co_await awaiter;
 
@@ -56,7 +63,7 @@ namespace test {
   TestImpl2::RunTask TestImpl2::clock_gen() {
     auto awaiter = test.getCoWrite(5); // Use the `test` reference
 
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < 5; i++) {
       awaiter.write("clk", 1);
       co_await awaiter;
       awaiter.write("clk", 0);

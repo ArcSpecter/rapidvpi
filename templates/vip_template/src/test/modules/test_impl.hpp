@@ -31,11 +31,18 @@ namespace test {
   class TestImpl {
   public:
     using RunTask = TestBase::RunTask;
+    using AwaitWrite = TestBase::AwaitWrite;
+    using AwaitChange = TestBase::AwaitChange;
+    using RunUserTask = TestBase::RunUserTask;
     explicit TestImpl(Test& base, int value);
 
     // User test coroutines
     RunTask run3();
     RunTask run4();
+
+    // Auxiliary coroutines
+    RunUserTask clock(int n = 1, int edge = 1) const;
+    RunUserTask delay_ns(double delay) const;
 
   private:
     Test& test;

@@ -187,15 +187,19 @@ namespace test {
       // for modifying the delay of the callback object
       template <TimeUnit T>
       void setDelay(double delay);
+      void setDelay(double delay); // Default ns format
 
-      // same as setDelay but with default ns precision argument
-      void setDelay(double delay);
+      template <TimeUnit T>
+      double getTime() const;
+      double getTime() const; // Default ns format
+
 
     private:
       std::string getStr(const std::string& netStr, unsigned int base = 2);
       TestBase& parent; // reference to the DUT test object of Test class
       unsigned long long int delay; // simulation time delay
       std::unordered_map<std::string, t_read_value> grouped_reads; // read ops
+      unsigned long long rdTime; // Current read simulation time
       std::coroutine_handle<> handle; // coroutine handle
     };
 
@@ -215,6 +219,10 @@ namespace test {
         rd_change_value.strValue = "";
         rd_change_value.uintValues = {};
       }
+
+      template <TimeUnit T>
+      double getTime() const;
+      double getTime() const; // Default ns format
 
       // adds write operation to grouped_writes
       void write(const std::string& netStr, unsigned int value);
@@ -240,6 +248,7 @@ namespace test {
       t_read_value rd_change_value; // holds the change value being read
 
       vpiHandle cb_handle; // handle for a callback for cbValueChange
+      unsigned long long rdTime; // Current read simulation time
       std::coroutine_handle<> handle; // coroutine handle
     };
 

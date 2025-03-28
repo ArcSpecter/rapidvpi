@@ -23,6 +23,21 @@
 #include "testbase.hpp"
 
 namespace test {
+
+  template <TimeUnit T>
+  double TestBase::AwaitChange::getTime() const {
+    return static_cast<double>(rdTime) * parent.sim_time_unit / TimeUnitConversion<T>::factor;
+  }
+
+  double TestBase::AwaitChange::getTime() const {
+    return getTime<ns>();
+  }
+
+  template double TestBase::AwaitChange::getTime<ps>() const;
+  template double TestBase::AwaitChange::getTime<ns>() const;
+  template double TestBase::AwaitChange::getTime<us>() const;
+  template double TestBase::AwaitChange::getTime<ms>() const;
+
   /**
    * This method suspends the current coroutine by registering a callback that will resume
    * it when a value change occurs on a monitored net in a simulation environment.
@@ -76,6 +91,13 @@ namespace test {
    * callback object used for monitoring the value change.
    */
   void TestBase::AwaitChange::await_resume() noexcept {
+    // These are for getting a current time reading
+    const vpiHandle cbH = nullptr;
+    s_vpi_time tim;
+    tim.type = vpiSimTime;
+    vpi_get_time(cbH, &tim);
+    rdTime = (static_cast<unsigned long long>(tim.high) << 32) | static_cast<unsigned long long>(tim.low);
+
     // Read the value being changed
     s_vpi_value read_val;
     read_val.format = vpiVectorVal;

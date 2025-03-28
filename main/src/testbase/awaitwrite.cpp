@@ -37,6 +37,12 @@ namespace test {
     setDelay<ns>(delay);
   }
 
+  // Explicit instantiations
+  template void TestBase::AwaitWrite::setDelay<ps>(const double);
+  template void TestBase::AwaitWrite::setDelay<ns>(const double);
+  template void TestBase::AwaitWrite::setDelay<us>(const double);
+  template void TestBase::AwaitWrite::setDelay<ms>(const double);
+
   /**
    * Suspends the coroutine and registers a scheduler callback to resume it after a delay.
    *

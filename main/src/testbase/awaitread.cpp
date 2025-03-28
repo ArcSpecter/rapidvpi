@@ -34,6 +34,25 @@ namespace test {
     setDelay<ns>(delay);
   }
 
+  template void TestBase::AwaitRead::setDelay<ps>(const double);
+  template void TestBase::AwaitRead::setDelay<ns>(const double);
+  template void TestBase::AwaitRead::setDelay<us>(const double);
+  template void TestBase::AwaitRead::setDelay<ms>(const double);
+
+  template <TimeUnit T>
+  double TestBase::AwaitRead::getTime() const {
+    return static_cast<double>(rdTime) * parent.sim_time_unit / TimeUnitConversion<T>::factor;
+  }
+
+  double TestBase::AwaitRead::getTime() const {
+    return getTime<ns>();
+  }
+
+  template double TestBase::AwaitRead::getTime<ps>() const;
+  template double TestBase::AwaitRead::getTime<ns>() const;
+  template double TestBase::AwaitRead::getTime<us>() const;
+  template double TestBase::AwaitRead::getTime<ms>() const;
+
 
   /**
    * Suspends the coroutine and registers a callback with the scheduler to resume it.
@@ -81,6 +100,12 @@ namespace test {
     s_vpi_value read_val;
     read_val.format = vpiVectorVal;
 
+    // These are for getting a current time reading
+    const vpiHandle cbH = nullptr;
+    s_vpi_time tim;
+    tim.type = vpiSimTime;
+    vpi_get_time(cbH, &tim);
+    rdTime = (static_cast<unsigned long long>(tim.high) << 32) | static_cast<unsigned long long>(tim.low);
 
     for (auto& pair : grouped_reads) {
       vpi_get_value(parent.getNetHandle(pair.first), &read_val);
