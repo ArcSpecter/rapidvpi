@@ -24,6 +24,9 @@
 #ifndef DUT_TOP_CORE_HPP
 #define DUT_TOP_CORE_HPP
 
+#include <memory>
+#include <exception>
+
 #include <vpi_user.h>
 #include "testbase.hpp"
 

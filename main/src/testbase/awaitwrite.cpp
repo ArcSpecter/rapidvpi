@@ -74,7 +74,7 @@ namespace test {
     if (vpiHandle cbH; (cbH = vpi_register_cb(&cb_data)) == nullptr)
       printf("[WARNING]\tCannot register VPI Callback: %s\n", __FUNCTION__);
     else
-      vpi_free_object(cbH);
+      this->cb_handle = cbH; // save handle so that we can unregister inside await_resume()
   }
 
   /**
@@ -150,6 +150,15 @@ namespace test {
     // Done operations, remove them from the list
     grouped_writes.clear();
     grouped_writes.rehash(0);
+
+    // Unregister the callback
+    vpi_remove_cb(cb_handle);
+
+    // Free the callback object
+    vpi_free_object(cb_handle);
+
+    // Clear the stored handle
+    cb_handle = nullptr;
   }
 
 

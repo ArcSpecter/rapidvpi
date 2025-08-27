@@ -27,6 +27,8 @@
 #include <cmath>
 #include <chrono>
 #include <coroutine>
+#include <memory>
+#include <exception>
 
 // VPI library
 #include <vpi_user.h>
@@ -157,6 +159,7 @@ namespace test {
       void setDelay(double delay);
 
     private:
+      vpiHandle cb_handle; // handle for a callback
       TestBase& parent; // reference to the DUT test object of Test class
       unsigned long long int delay; // simulation time delay
       std::unordered_map<std::string, t_write_value> grouped_writes; // write ops
@@ -195,6 +198,7 @@ namespace test {
 
 
     private:
+      vpiHandle cb_handle; // handle for a callback
       std::string getStr(const std::string& netStr, unsigned int base = 2);
       TestBase& parent; // reference to the DUT test object of Test class
       unsigned long long int delay; // simulation time delay
