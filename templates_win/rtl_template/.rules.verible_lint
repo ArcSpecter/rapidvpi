@@ -1,0 +1,4 @@
+-posix-eof
+-line-length
+-parameter-name-style
+-explicit-function-lifetime

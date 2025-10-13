@@ -8,7 +8,7 @@ Blazingly fast, modern C++ API using coroutines for efficient RTL verification a
 - [Introduction](#introduction)
 - [Why RapidVPI?](#why-rapidvpi)
 - [Prerequisites](#prerequisites)
-- [Installation](#installation)
+- [Installation (Linux)](#installation-linux)
 - [Quick start](#quick-start)
 - [Writing RapidVPI test code](#writing-rapidvpi-test-code)
 - [RapidVPI Internal Architecture](#rapidvpi-internal-architecture)
@@ -37,7 +37,7 @@ The motivation for the development of this library was the ability to use all th
 ### Prerequisites
 ninja, gcc >14.2, cmake >3.1, iverilog (tested with), gtkwave (optional)
 
-### Installation
+### Installation (Linux)
 The following environment variables must be set:
 VPI_LIB_DIR - pointing to the library location for VPI (typically where your simulator installed)
 VPI_INCLUDE_DIR - pointing to the location of vpi_user.h (within installation folder of your simulator as well)
@@ -86,6 +86,41 @@ Above will install the library and its .so files and necessary headers in approp
 -- Up-to-date: /usr/local/lib/cmake/rapidvpi/rapidvpiConfig.cmake
 -- Up-to-date: /usr/local/lib/cmake/rapidvpi/rapidvpiConfigVersion.cmake
 ```
+
+### Installation (Windows)
+In order to be able to use this API on Windows (currently tested Win11), it is assumed that user installs MSYS2 system in his windows environment, and inside that environment he installs all the same prerequisite packages like iverilog, cmake, ninja. Obviously, that he needs to compile from source and build/install the iverilog inside MSYS environment as well.
+
+Assuming that above is done, the following environment variables must be set:
+VPI_LIB_DIR - pointing to the library location for VPI (typically where your simulator installed)
+VPI_INCLUDE_DIR - pointing to the location of vpi_user.h (within installation folder of your simulator as well)
+
+In the current case since Iverilog was used, those locations were:
+VPI_LIB_DIR=/path/to/iverilog/libveriuser
+VPI_INCLUDE_DIR=/path/to/iverilog
+
+After that we just have first to build and install core RapidVPI components, go into the `main_win` folder and:
+```
+./configure.sh
+./build.sh
+./install.sh
+```
+
+That installs the RapidVPI in the msys environment created inside windows.
+
+Then to compile the cosimulation template project `vip_template` just go to `./templates_win/vip_template` and:
+```
+./configure.sh
+./build.sh
+```
+Above will create the dynamic library which can be used to cosimulate with iverilog.
+
+Next, go to `./templates_win/rtl_template` and:
+```
+./configure.sh
+./compile.sh
+./run.sh
+```
+Above will configure, compile the test SystemVerilog sources included as part of `rtl_template` project, then it will fire up simulation with `vvp` and you will see output printed out in console.
 
 ### Quick start
 Build the vip_template shared co-simulation .so file:
