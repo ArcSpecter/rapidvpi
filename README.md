@@ -9,6 +9,7 @@ Blazingly fast, modern C++ API using coroutines for efficient RTL verification a
 - [Why RapidVPI?](#why-rapidvpi)
 - [Prerequisites](#prerequisites)
 - [Installation (Linux)](#installation-linux)
+- [Installation (Windows)](#installation-windows)
 - [Quick start](#quick-start)
 - [Writing RapidVPI test code](#writing-rapidvpi-test-code)
 - [RapidVPI Internal Architecture](#rapidvpi-internal-architecture)
