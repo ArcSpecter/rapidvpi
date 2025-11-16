@@ -53,8 +53,13 @@ namespace scheduler {
       std::printf("[DBG] write_callback: NULL handle or user_data\n");
     }
 
-    // IMPORTANT for now: do NOT delete callbackData here.
-    // We’ll accept a small leak during debugging to avoid use-after-free.
+    // cbAfterDelay is one-shot. The simulator will drop the callback;
+    // we only need to free our user_data.
+    if (callbackData) {
+      delete callbackData;
+      data->user_data = nullptr;
+    }
+
     return 0;
   }
 
@@ -87,7 +92,13 @@ namespace scheduler {
       std::printf("[DBG] read_callback: NULL handle or user_data\n");
     }
 
-    // No delete here either.
+    // cbReadOnlySynch is also one-shot; simulator removes callback.
+    // Free our user_data.
+    if (callbackData) {
+      delete callbackData;
+      data->user_data = nullptr;
+    }
+
     return 0;
   }
 
@@ -120,7 +131,17 @@ namespace scheduler {
       std::printf("[DBG] change_callback: NULL handle or user_data\n");
     }
 
-    // No delete here either.
+    // Non-targeted cbValueChange is one-shot in our scheme:
+    // remove the callback and free user_data so it cannot fire again.
+    if (callbackData) {
+      if (callbackData->cb_handle) {
+        vpi_remove_cb(callbackData->cb_handle);
+        callbackData->cb_handle = nullptr;
+      }
+      delete callbackData;
+      data->user_data = nullptr;
+    }
+
     return 0;
   }
 
@@ -190,7 +211,7 @@ namespace scheduler {
 
     if (!match) {
       std::printf("[DBG] change_callback_targeted: no match, keep callback.\n");
-      // Don’t delete user_data; we want to keep waiting for the right value.
+      // Do not delete user_data; we want to keep waiting for the right value.
       return 0;
     }
 
@@ -199,8 +220,13 @@ namespace scheduler {
 
     std::coroutine_handle<> h = callbackData->handle;
 
-    // Even on match, for now we DON’T delete callbackData here.
-    // (We may make this one-shot later once everything is stable.)
+    // On match: remove callback and free user_data so it cannot fire again.
+    if (callbackData->cb_handle) {
+      vpi_remove_cb(callbackData->cb_handle);
+      callbackData->cb_handle = nullptr;
+    }
+    delete callbackData;
+    data->user_data = nullptr;
 
     if (h) {
       h.resume();

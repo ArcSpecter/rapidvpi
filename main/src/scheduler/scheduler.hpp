@@ -20,7 +20,6 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-
 #ifndef DUT_TOP_SCHEDULER_HPP
 #define DUT_TOP_SCHEDULER_HPP
 
@@ -44,6 +43,10 @@ namespace scheduler {
 
     // For cbValueChange+vpiVectorVal we must provide a backing array.
     std::vector<s_vpi_vecval> vec;
+
+    // For cbValueChange callbacks, remember the registered callback handle
+    // so we can explicitly vpi_remove_cb() when we are done.
+    vpiHandle cb_handle{}; // handle returned by vpi_register_cb
   };
 
   PLI_INT32 write_callback(p_cb_data data);

@@ -120,9 +120,12 @@ namespace test {
     std::printf("[DBG] AwaitChange::await_suspend: vpi_register_cb OK, cb_handle=%p\n",
                 static_cast<void*>(cbH));
 
-    // Success: scheduler::change_callback(_targeted) will delete user_data.
+    // Remember callback handle inside scheduler data so callback can remove itself.
+    callbackData->cb_handle = cbH;
+
+    // Success: scheduler::change_callback(_targeted) will remove cb and delete user_data.
     (void)callbackData.release();
-    cb_handle = cbH; // save handle so that we can unregister if needed
+    cb_handle = cbH; // optional: for future explicit cancel API
   }
 
   void TestBase::AwaitChange::await_resume() noexcept {
@@ -189,9 +192,9 @@ namespace test {
     std::printf("[DBG] AwaitChange::await_resume: strValue length=%zu\n",
                 rd_change_value.strValue.size());
 
-    // NOTE: we do NOT call vpi_remove_cb here because the callback
-    // lifetime is managed by the simulator and our scheduler::change_callback
-    // already deleted user_data. cb_handle was only used if we wanted to cancel.
+    // Note: scheduler::change_callback(_targeted) already removed the cb
+    // and deleted user_data. cb_handle here is only for cancel-before-fire,
+    // which we don't yet implement, so just clear the local copy.
     cb_handle = nullptr;
   }
 

@@ -292,16 +292,17 @@ namespace test {
         }
 
         std::suspend_never initial_suspend() { return {}; }
-        std::suspend_never final_suspend() noexcept { return {}; }
 
-        void return_void() {
-        }
+        // CHANGE THIS:
+        std::suspend_always final_suspend() noexcept { return {}; }
 
+        void return_void() {}
         void unhandled_exception() { std::terminate(); }
       };
 
       std::coroutine_handle<promise_type> handle;
     };
+
 
     // ============================================================
     // RunUserTask
