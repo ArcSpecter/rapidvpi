@@ -19,30 +19,32 @@
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
-
 #ifndef DUT_TOP_SCHEDULER_HPP
 #define DUT_TOP_SCHEDULER_HPP
 
-
 #include <coroutine>
-
 #include <vpi_user.h>
 
-
 namespace scheduler {
-    struct SchedulerCallbackData {
-        std::coroutine_handle<> handle; // The coroutine handle to be resumed
-        unsigned long long int cb_change_target_value; // target value monitored for signal change
-        unsigned short int cb_change_target_value_length; // bitwize length of signal monitored for change
-    };
 
-    PLI_INT32 write_callback(p_cb_data data);
-    PLI_INT32 read_callback(p_cb_data data);
-    PLI_INT32 change_callback(p_cb_data data);
-    PLI_INT32 change_callback_targeted(p_cb_data data);
+  struct SchedulerCallbackData {
+    std::coroutine_handle<> handle{};             // coroutine to resume
 
+    // For targeted cbValueChange
+    unsigned long long cb_change_target_value{};  // target value
+    unsigned int       cb_change_target_value_length{}; // bit-length of monitored signal
 
-}
+    // Persistent VPI time/value storage for this callback
+    // These must remain valid while the callback is registered.
+    s_vpi_time  time{};       // stays valid for cb_data.time
+    s_vpi_value vpi_value{};  // stays valid for cb_data.value
+  };
 
+  PLI_INT32 write_callback(p_cb_data data);
+  PLI_INT32 read_callback(p_cb_data data);
+  PLI_INT32 change_callback(p_cb_data data);
+  PLI_INT32 change_callback_targeted(p_cb_data data);
 
-#endif //DUT_TOP_SCHEDULER_HPP
+} // namespace scheduler
+
+#endif // DUT_TOP_SCHEDULER_HPP

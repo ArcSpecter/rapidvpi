@@ -24,8 +24,6 @@
 #include "testbase.hpp"
 
 namespace test {
-
-
   template <TimeUnit T>
   void TestBase::AwaitWrite::setDelay(const double delay) {
     constexpr double factor = TimeUnitConversion<T>::factor;
@@ -56,8 +54,8 @@ namespace test {
     callbackData->handle = h; // Store the coroutine handle
 
     // register scheduler callback here
-    s_cb_data cb_data;
-    s_vpi_time tim;
+    s_cb_data cb_data{};
+    s_vpi_time tim{};
 
     tim.high = 0;
     tim.low = delay;
@@ -67,34 +65,54 @@ namespace test {
     cb_data.cb_rtn = &scheduler::write_callback;
     cb_data.obj = nullptr;
     cb_data.time = &tim;
-    cb_data.value = nullptr;
-    cb_data.user_data = reinterpret_cast<PLI_BYTE8*>(callbackData.release()); // Pass ownership
+    cb_data.value = nullptr; // allowed for cbAfterDelay
 
+    // hand pointer but do NOT release yet
+    cb_data.user_data = reinterpret_cast<PLI_BYTE8*>(callbackData.get());
 
-    if (vpiHandle cbH; (cbH = vpi_register_cb(&cb_data)) == nullptr)
-      printf("[WARNING]\tCannot register VPI Callback: %s\n", __FUNCTION__);
-    else
-      this->cb_handle = cbH; // save handle so that we can unregister inside await_resume()
+    vpiHandle cbH = vpi_register_cb(&cb_data);
+    if (cbH == nullptr) {
+      std::printf("[WARNING]\tCannot register VPI Callback. TestBase::AwaitWrite:: %s\n",
+                  __FUNCTION__);
+
+      // Optional: dump VPI error info for debug
+      s_vpi_error_info err{};
+      if (vpi_chk_error(&err)) {
+        std::printf("[VPI ERROR]\tcode=%s msg=%s file=%s line=%d\n",
+                    err.code ? err.code : "(null)",
+                    err.message ? err.message : "(null)",
+                    err.file ? err.file : "(null)",
+                    static_cast<int>(err.line));
+      }
+      else {
+        std::printf("[VPI ERROR]\tNo additional VPI error info.\n");
+      }
+
+      cb_handle = nullptr;
+      // registration failed -> unique_ptr auto-frees callbackData
+      return;
+    }
+
+    // success: scheduler::write_callback will delete user_data
+    (void)callbackData.release();
+    cb_handle = cbH; // save handle so that we can unregister inside await_resume()
   }
 
   /**
    * Resumes the coroutine by executing all pending write operations stored in grouped_writes.
    *
-   * @details This method processes each write operation by converting the stored value into a hardware-compatible format and executes the write operation.
-   * It handles writes of both numeric and string values:
-   * - Numeric values are split into 32-bit chunks and stored in a vector.
-   * - String values are converted to bits and stored in a vector, with special handling for '0', '1', 'x' (undefined), and 'z' (high impedance) characters.
-   * After performing all write operations, it clears the list of grouped writes.
-   *
-   * @note This method is noexcept, ensuring it does not throw exceptions.
+   * @details This method processes each write operation by converting the stored value into a
+   * hardware-compatible format and executes the write operation.
    */
   void TestBase::AwaitWrite::await_resume() noexcept {
-    s_vpi_value val;
+    s_vpi_value val{};
+    val.format = vpiVectorVal;
 
     // Scan through grouped_writes and perform write for each record
     for (const auto& pair : grouped_writes) {
       const std::string& key = pair.first;
-      const unsigned int vecval_len = (parent.getNetLength(key) + 31) / 32; // number of 32-bit chunks required
+      const unsigned int vecval_len =
+        (parent.getNetLength(key) + 31) / 32; // number of 32-bit chunks required
 
       std::vector<s_vpi_vecval> write_vecval(vecval_len, {0, 0}); // Initialize all elements to {0, 0}
 
@@ -105,8 +123,8 @@ namespace test {
         // Split the value into 32-bit chunks and store them in write_vecval
         for (unsigned int i = 0; i < vecval_len; ++i) {
           write_vecval[i].aval = static_cast<PLI_INT32>(temp_value & 0xFFFFFFFF); // Extract 32 bits
-          write_vecval[i].bval = 0; // no bval used for this variant of write()
-          temp_value >>= 32; // Shift right by 32 bits for the next chunk
+          write_vecval[i].bval = 0; // no bval used here
+          temp_value >>= 32; // next chunk
         }
       }
       else {
@@ -116,33 +134,32 @@ namespace test {
         // Fill write_vecval with bits from the string in reverse order
         size_t bit_index = 0;
         for (auto it = value.rbegin(); it != value.rend(); ++it, ++bit_index) {
-          size_t vecval_index = bit_index / 32;
-          size_t bit_position = bit_index % 32;
-          auto bit_mask = static_cast<PLI_INT32>(1u << bit_position);
+          const size_t vecval_index = bit_index / 32;
+          const size_t bit_position = bit_index % 32;
+          const auto bit_mask = static_cast<PLI_INT32>(1u << bit_position);
 
           switch (*it) {
           case '1':
             write_vecval[vecval_index].aval |= bit_mask;
             break;
           case '0':
-            // no need to set 0 bits explicitly, already 0
+            // already 0
             break;
           case 'x':
-            write_vecval[vecval_index].aval |= bit_mask; // Set aval to 1
-            write_vecval[vecval_index].bval |= bit_mask; // Set bval to 1 (undefined)
+            write_vecval[vecval_index].aval |= bit_mask; // 1
+            write_vecval[vecval_index].bval |= bit_mask; // X
             break;
           case 'z':
-            write_vecval[vecval_index].aval &= ~bit_mask; // Ensure aval is 0
-            write_vecval[vecval_index].bval |= bit_mask; // Set bval to 1 (high impedance)
+            write_vecval[vecval_index].aval &= ~bit_mask; // 0
+            write_vecval[vecval_index].bval |= bit_mask; // Z
             break;
           default:
-            printf("[WARNING]\tInvalid binary character used in write(): %s\n", &*it);
+            std::printf("[WARNING]\tInvalid binary character used in write(): %c\n", *it);
             break;
           }
         }
       }
 
-      val.format = vpiVectorVal;
       val.value.vector = write_vecval.data();
       vpi_put_value(parent.getNetHandle(key), &val, nullptr, pair.second.flag);
     }
@@ -151,26 +168,21 @@ namespace test {
     grouped_writes.clear();
     grouped_writes.rehash(0);
 
-    // Unregister the callback
-    vpi_remove_cb(cb_handle);
-
-    // Free the callback object
-    vpi_free_object(cb_handle);
-
-    // Clear the stored handle
-    cb_handle = nullptr;
+    // Unregister and free the callback only if it actually exists
+    if (cb_handle != nullptr) {
+      vpi_remove_cb(cb_handle);
+      vpi_free_object(cb_handle);
+      cb_handle = nullptr;
+    }
   }
-
 
   /**
    * Adds a write operation to the grouped writes with the vpiNoDelay flag
    * The flag indicates that this is a regular write to the HDL net
-   *
-   * @param netStr The name of the net to be written to.
-   * @param value The unsigned long long integer value to be written to the net.
    */
-  void TestBase::AwaitWrite::write(const std::string& netStr, const unsigned long long int value) {
-    t_write_value write_value;
+  void TestBase::AwaitWrite::write(const std::string& netStr,
+                                   const unsigned long long int value) {
+    t_write_value write_value{};
     write_value.flag = vpiNoDelay; // For regular write we use no delay flag
     write_value.ullValue = value;
     grouped_writes.insert(std::make_pair(netStr, write_value));
@@ -178,14 +190,11 @@ namespace test {
 
   /**
    * Adds a write operation to the grouped writes with the vpiForceFlag flag
-   * The flag indicates that this is a force on a net (which can be overriden
-   * by another force or released with vpiReleaseFlag on next similar vpi_put_value()
-   *
-   * @param netStr The name of the net to which the value should be forced.
-   * @param value The unsigned long long integer value to be forced onto the net.
+   * The flag indicates that this is a force on a net.
    */
-  void TestBase::AwaitWrite::force(const std::string& netStr, const unsigned long long int value) {
-    t_write_value write_value;
+  void TestBase::AwaitWrite::force(const std::string& netStr,
+                                   const unsigned long long int value) {
+    t_write_value write_value{};
     write_value.flag = vpiForceFlag; // Force net
     write_value.ullValue = value;
     grouped_writes.insert(std::make_pair(netStr, write_value));
@@ -193,31 +202,23 @@ namespace test {
 
   /**
    * Releases a previously forced value on the specified net.
-   * The implementation is still thru the usage of t_write_value, but
-   * with a flag set to vpiReleaseFlag
-   *
-   * @param netStr The name of the net to release the forced value from.
    */
   void TestBase::AwaitWrite::release(const std::string& netStr) {
-    t_write_value write_value;
+    t_write_value write_value{};
     write_value.flag = vpiReleaseFlag; // release force
     write_value.ullValue = 0;
     grouped_writes.insert(std::make_pair(netStr, write_value));
   }
 
-
   /**
-   * Adds a write operation to the grouped writes with the vpiNoDelay flag.
-   * The flag indicates that this is a regular write to the HDL net.
-   * This function is for writing using the string representation of the number.
-   *
-   * @param netStr The name of the net to be written to.
-   * @param valStr The value to be written to the net, as a string.
-   * @param base The numerical base of the value (e.g., 10 for decimal, 16 for hexadecimal).
+   * String write, vpiNoDelay.
    */
-  void TestBase::AwaitWrite::write(const std::string& netStr, const std::string& valStr, const unsigned int base) {
-    t_write_value write_value;
-    write_value.flag = vpiNoDelay; // For regular write we use no delay flag
+  void TestBase::AwaitWrite::write(const std::string& netStr,
+                                   const std::string& valStr,
+                                   const unsigned int base) {
+    t_write_value write_value{};
+    write_value.flag = vpiNoDelay; // regular write
+
     if (base == 16) {
       write_value.strValue = hex_to_bin(valStr);
     }
@@ -228,18 +229,15 @@ namespace test {
     grouped_writes.insert(std::make_pair(netStr, write_value));
   }
 
-
   /**
-   * Adds a force write operation to the grouped writes with the vpiForceFlag flag.
-   * This function is for writing force values using the string representation of the number.
-   *
-   * @param netStr The name of the net on which the value should be forced.
-   * @param valStr The value to be forced onto the net, as a string.
-   * @param base The numerical base of the value (e.g., 10 for decimal, 16 for hexadecimal).
+   * String force, vpiForceFlag.
    */
-  void TestBase::AwaitWrite::force(const std::string& netStr, const std::string& valStr, const unsigned int base) {
-    t_write_value write_value;
+  void TestBase::AwaitWrite::force(const std::string& netStr,
+                                   const std::string& valStr,
+                                   const unsigned int base) {
+    t_write_value write_value{};
     write_value.flag = vpiForceFlag; // force net
+
     if (base == 16) {
       write_value.strValue = hex_to_bin(valStr);
     }
@@ -249,4 +247,4 @@ namespace test {
 
     grouped_writes.insert(std::make_pair(netStr, write_value));
   }
-}
+} // namespace test

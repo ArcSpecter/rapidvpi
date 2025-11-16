@@ -47,7 +47,7 @@ namespace core {
     dut->initNets();
 
     auto& testManager = test::TestManager::getInstance();
-
+    printf("[INFO] ABOUT TO START TEST MANAGER\n");
     for (const auto& [name, testFunctions] : testManager.getTests()) {
       for (const auto& testFunction : testFunctions) {
         auto handle = testFunction();
@@ -62,7 +62,7 @@ namespace core {
     // Invoke the user-defined factory registration function
     userRegisterFactory();
 
-    s_cb_data cb_data;
+    s_cb_data cb_data{};
     cb_data.reason = cbStartOfSimulation;
     cb_data.cb_rtn = &sim_init;
     cb_data.obj = nullptr;

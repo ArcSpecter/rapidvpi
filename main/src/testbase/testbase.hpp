@@ -20,6 +20,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+
 #ifndef DUT_TOP_TESTBASE_HPP
 #define DUT_TOP_TESTBASE_HPP
 
@@ -29,13 +30,16 @@
 #include <coroutine>
 #include <memory>
 #include <exception>
+#include <vector>
+#include <unordered_map>
+#include <functional>
+#include <cstdio>  // for printf / std::printf
 
 // VPI library
 #include <vpi_user.h>
 
 #include "testmanager.hpp"
 #include "scheduler.hpp"
-
 
 namespace test {
   typedef struct s_write_value {
@@ -54,7 +58,7 @@ namespace test {
     std::vector<unsigned int> uintValues;
   } t_read_value;
 
-  // Enum class and conversion factors (already defined)
+  // Enum class and conversion factors
   enum class TimeUnit { ms, us, ns, ps };
 
   inline constexpr auto ms = TimeUnit::ms;
@@ -89,25 +93,22 @@ namespace test {
    * @class TestBase
    *
    * @brief Base class for DUT unit testing operations.
-   *
-   * This class provides functionalities for handing DUT unit test operations,
-   * such as simulating various tasks like writing and reading signals, and monitoring
-   * net changes.
    */
   class TestBase {
   public:
-    explicit TestBase() {
-      sim_time_unit = 0;
+    explicit TestBase()
+      : dutName()
+        , sim_time_unit(0.0)
+        , netMap() {
     }
 
     // Set the DUT name
     void setDutName(const std::string& name) {
       dutName = name;
-      printf("Top level DUT: %s\n", dutName.c_str());
+      std::printf("Top level DUT: %s\n", dutName.c_str());
     }
 
     virtual void initNets() = 0; // Force derived classes to implement
-
 
     // Function for updating simulation time unit
     void updateSimTimeUnit(const double SimTimeUnit) {
@@ -124,12 +125,18 @@ namespace test {
     static std::string bin_to_hex(const std::string& bin);
     static std::string hex_to_bin(const std::string& hex);
 
-    // This class is an Awaiter object to be used for RunTask coroutine
+    // ============================================================
+    // AwaitWrite
+    // ============================================================
     class AwaitWrite {
     public:
-      // Main constructor. Gets reference to base class object and delay for
-      // the event scheduling
-      AwaitWrite(TestBase& parentRef, const unsigned long long int delay) : parent(parentRef), delay(delay) {
+      // Main constructor. Gets reference to base class object and delay for event scheduling
+      AwaitWrite(TestBase& parentRef, const unsigned long long int delay)
+        : cb_handle(nullptr)
+          , parent(parentRef)
+          , delay(delay)
+          , grouped_writes()
+          , handle(nullptr) {
       }
 
       // Coroutine service functions
@@ -166,15 +173,22 @@ namespace test {
       std::coroutine_handle<> handle; // coroutine handle
     };
 
-
+    // ============================================================
+    // AwaitRead
+    // ============================================================
     class AwaitRead {
     public:
-      // Main constructor. Gets reference to base class object and delay for
-      // the event scheduling
-      AwaitRead(TestBase& parentRef, const unsigned long long int delay) : parent(parentRef), delay(delay) {
+      // Main constructor. Gets reference to base class object and delay for event scheduling
+      AwaitRead(TestBase& parentRef, const unsigned long long int delay)
+        : cb_handle(nullptr)
+          , parent(parentRef)
+          , delay(delay)
+          , grouped_reads()
+          , rdTime(0)
+          , handle(nullptr) {
       }
 
-      // adds write operation to grouped_writes
+      // adds read operation to grouped_reads
       void read(const std::string& netStr);
 
       unsigned long long int getNum(const std::string& netStr);
@@ -196,7 +210,6 @@ namespace test {
       double getTime() const;
       double getTime() const; // Default ns format
 
-
     private:
       vpiHandle cb_handle; // handle for a callback
       std::string getStr(const std::string& netStr, unsigned int base = 2);
@@ -207,29 +220,40 @@ namespace test {
       std::coroutine_handle<> handle; // coroutine handle
     };
 
-    // This class is an Awaiter object to be used for RunTask coroutine
+    // ============================================================
+    // AwaitChange
+    // ============================================================
     class AwaitChange {
     public:
       // Main constructor. Gets reference to base class and net monitored for change
-      AwaitChange(TestBase& parentRef, std::string net) : parent(parentRef), net(std::move(net)) {
-        change_is_targeted = false;
+      AwaitChange(TestBase& parentRef, std::string net)
+        : parent(parentRef)
+          , net(std::move(net))
+          , change_target_value(0)
+          , change_is_targeted(false)
+          , rd_change_value()
+          , cb_handle(nullptr)
+          , rdTime(0)
+          , handle(nullptr) {
       }
 
-      // Targeted change constructor. Gets reference to base class, net monitored for a change
-      // and the target change for which the net is monitored
+      // Targeted change constructor
       AwaitChange(TestBase& parentRef, std::string net, unsigned long long int target_value)
-        : parent(parentRef), net(std::move(net)), change_target_value(target_value) {
-        change_is_targeted = true;
-        rd_change_value.strValue = "";
-        rd_change_value.uintValues = {};
+        : parent(parentRef)
+          , net(std::move(net))
+          , change_target_value(target_value)
+          , change_is_targeted(true)
+          , rd_change_value()
+          , cb_handle(nullptr)
+          , rdTime(0)
+          , handle(nullptr) {
+        rd_change_value.strValue.clear();
+        rd_change_value.uintValues.clear();
       }
 
       template <TimeUnit T>
       double getTime() const;
       double getTime() const; // Default ns format
-
-      // adds write operation to grouped_writes
-      void write(const std::string& netStr, unsigned int value);
 
       // Coroutine service functions
       bool await_ready() const noexcept { return false; }
@@ -248,7 +272,6 @@ namespace test {
 
       // flag telling whether or not the change monitoring is looking for certain target
       bool change_is_targeted;
-
       t_read_value rd_change_value; // holds the change value being read
 
       vpiHandle cb_handle; // handle for a callback for cbValueChange
@@ -256,15 +279,9 @@ namespace test {
       std::coroutine_handle<> handle; // coroutine handle
     };
 
-
-    /**
-     * @struct RunTask
-     *
-     * @brief Coroutine task structure for handling asynchronous operations.
-     * The RunTask type is the main type used for the user to instantiate his parallel tests
-     * After the tests are declared and registered in the Test class, the test manager object
-     * is created in the API core engine and concurrent test execution starts
-     */
+    // ============================================================
+    // RunTask
+    // ============================================================
     struct RunTask {
       struct promise_type {
         TestBase* test_instance;
@@ -286,16 +303,9 @@ namespace test {
       std::coroutine_handle<promise_type> handle;
     };
 
-
-    /**
-     * @struct RunUserTask
-     *
-     * @brief Provides management of a coroutine for executing user-defined tasks with parent-child coroutine relationships.
-     *
-     * This structure represents a coroutine adapter that tracks parent coroutine handles and manages task execution flow.
-     * The associated promise type ensures proper initialization, suspension, resumption, and destruction of the coroutine.
-     * It also facilitates awaiting of child coroutines by the parent coroutine.
-     */
+    // ============================================================
+    // RunUserTask
+    // ============================================================
     struct RunUserTask {
       struct promise_type {
         // We'll keep track of the parent handle so we can resume it later
@@ -315,7 +325,7 @@ namespace test {
         auto final_suspend() noexcept {
           struct FinalAwaiter {
             bool await_ready() const noexcept { return false; }
-            // Resume the parent handle stored in promise_type when the child finishes
+
             void await_suspend(std::coroutine_handle<promise_type> h) noexcept {
               auto& promise = h.promise();
               if (promise.parentHandle) {
@@ -329,13 +339,10 @@ namespace test {
           return FinalAwaiter{};
         }
 
-        // Standard boilerplate
         void return_void() {
         }
 
-        void unhandled_exception() {
-          std::terminate();
-        }
+        void unhandled_exception() { std::terminate(); }
       };
 
       using Handle = std::coroutine_handle<promise_type>;
@@ -361,7 +368,6 @@ namespace test {
 
           // Save caller's handle, resume child, so child can eventually resume caller
           void await_suspend(std::coroutine_handle<> caller) noexcept {
-            // Store the parent's handle so final_suspend can resume it
             childHandle.promise().parentHandle = caller;
             childHandle.resume();
           }
@@ -373,98 +379,43 @@ namespace test {
       }
     };
 
+    // ============================================================
+    // Factory helpers
+    // ============================================================
 
-    /**
-     * @brief Returns an AwaitWrite object with adjusted delay for co-routine event scheduling.
-     *
-     * This function creates an AwaitWrite object, adjusting the provided delay according to the
-     * relevant time unit conversion factor and simulation time unit.
-     *
-     * @param delay The delay in the specified time unit before the write operation is executed.
-     * @return AwaitWrite object configured with the adjusted delay.
-     */
     template <TimeUnit T>
     AwaitWrite getCoWrite(const double delay) {
       constexpr double factor = TimeUnitConversion<T>::factor;
-      double adjusted_delay = delay * factor / sim_time_unit; // Mixed compile-time and runtime
+      double adjusted_delay = delay * factor / sim_time_unit;
       return AwaitWrite{*this, static_cast<unsigned long long int>(adjusted_delay)};
     }
 
-    /**
-     * @brief Returns an AwaitWrite object with a delay specified in nanoseconds
-     * for co-routine event scheduling.
-     *
-     * @param delay The delay in nanoseconds before the write operation is executed.
-     * @return AwaitWrite object configured with the given delay.
-     */
     AwaitWrite getCoWrite(const double delay) {
       return getCoWrite<ns>(delay);
     }
 
-    /**
-     * @brief Returns an AwaitChange object for monitoring changes to a specified net.
-     *
-     * This function creates an AwaitChange object that allows the coroutine to wait
-     * for changes to occur on the specified net.
-     *
-     * @param net The name of the net to be monitored for changes.
-     * @return AwaitChange object configured to monitor the specified net.
-     */
     AwaitChange getCoChange(const std::string& net) {
       return AwaitChange{*this, net};
     }
 
-    /**
-     * @brief Returns an AwaitRead object with adjusted delay for co-routine event scheduling.
-     *
-     * This function creates an AwaitRead object, adjusting the provided delay according to the
-     * relevant time unit conversion factor and simulation time unit.
-     *
-     * @param delay The delay in the specified time unit before the read operation is executed.
-     * @return AwaitRead object configured with the adjusted delay.
-     */
     template <TimeUnit T>
     AwaitRead getCoRead(const double delay) {
       constexpr double factor = TimeUnitConversion<T>::factor;
-      double adjusted_delay = delay * factor / sim_time_unit; // Mixed compile-time and runtime
+      double adjusted_delay = delay * factor / sim_time_unit;
       return AwaitRead{*this, static_cast<unsigned long long int>(adjusted_delay)};
     }
 
-    /**
-     * @brief Returns an AwaitRead object with a delay specified in nanoseconds
-     * for co-routine event scheduling.
-     *
-     * @param delay The delay in nanoseconds before the read operation is executed.
-     * @return AwaitRead object configured with the given delay.
-     */
     AwaitRead getCoRead(const double delay) {
       return getCoRead<ns>(delay);
     }
 
-    /**
-     * @brief Returns an AwaitChange object for monitoring a specified net until a target value is reached.
-     *
-     * This function creates an AwaitChange object that allows the coroutine to wait
-     * until the specified net changes to the provided target value.
-     *
-     * @param net The name of the net to be monitored for changes.
-     * @param target_value The target value that the net is expected to change to.
-     * @return AwaitChange object configured to monitor the specified net for the target value.
-     */
     AwaitChange getCoChange(const std::string& net, unsigned long long int target_value) {
       return AwaitChange{*this, net, target_value};
     }
 
-
-    /**
-     * @brief Registers a test function with a specified name.
-     *
-     * This function allows the registration of a coroutine test function
-     * in the test framework by associating it with a unique name.
-     *
-     * @param name The name to associate with the test function.
-     * @param func The coroutine test function to be registered.
-     */
+    // ============================================================
+    // Test registration
+    // ============================================================
     void registerTest(const std::string& name, std::function<std::coroutine_handle<>()> func) {
       RegistrationHelper::registerTest(this, name, func);
     }
@@ -477,5 +428,6 @@ namespace test {
     double sim_time_unit; // simulation time unit
     std::unordered_map<std::string, t_netmap_value> netMap; // [key, value] list of DUT signals
   };
-}
-#endif //DUT_TOP_TESTBASE_HPP
+} // namespace test
+
+#endif // DUT_TOP_TESTBASE_HPP

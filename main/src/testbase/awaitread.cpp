@@ -53,7 +53,6 @@ namespace test {
   template double TestBase::AwaitRead::getTime<us>() const;
   template double TestBase::AwaitRead::getTime<ms>() const;
 
-
   /**
    * Suspends the coroutine and registers a callback with the scheduler to resume it.
    *
@@ -67,8 +66,8 @@ namespace test {
     callbackData->handle = h; // Store the coroutine handle
 
     // register scheduler callback here
-    s_cb_data cb_data;
-    s_vpi_time tim;
+    s_cb_data cb_data{};
+    s_vpi_time tim{};
 
     tim.high = 0;
     tim.low = delay;
@@ -78,14 +77,37 @@ namespace test {
     cb_data.cb_rtn = &scheduler::read_callback;
     cb_data.obj = nullptr;
     cb_data.time = &tim;
-    cb_data.value = nullptr;
-    cb_data.user_data = reinterpret_cast<PLI_BYTE8*>(callbackData.release()); // Pass ownership
+    cb_data.value = nullptr; // For cbReadOnlySynch this is allowed to be null in Questa
 
+    // hand pointer but do NOT release yet
+    cb_data.user_data = reinterpret_cast<PLI_BYTE8*>(callbackData.get());
 
-    if (vpiHandle cbH; (cbH = vpi_register_cb(&cb_data)) == nullptr)
-      printf("[WARNING]\tCannot register VPI Callback: %s\n", __FUNCTION__);
-    else
-      this->cb_handle = cbH; // save handle so that we can unregister inside await_resume()
+    vpiHandle cbH = vpi_register_cb(&cb_data);
+    if (cbH == nullptr) {
+      std::printf("[WARNING]\tCannot register VPI Callback. TestBase::AwaitRead:: %s\n",
+                  __FUNCTION__);
+
+      // Optional: dump VPI error info for debugging
+      s_vpi_error_info err{};
+      if (vpi_chk_error(&err)) {
+        std::printf("[VPI ERROR]\tcode=%s msg=%s file=%s line=%d\n",
+                    err.code ? err.code : "(null)",
+                    err.message ? err.message : "(null)",
+                    err.file ? err.file : "(null)",
+                    static_cast<int>(err.line));
+      }
+      else {
+        std::printf("[VPI ERROR]\tNo additional VPI error info.\n");
+      }
+
+      cb_handle = nullptr;
+      // registration failed -> unique_ptr cleans up
+      return;
+    }
+
+    // success: scheduler::read_callback will delete user_data
+    (void)callbackData.release();
+    cb_handle = cbH; // save handle so that we can unregister inside await_resume()
   }
 
   /**
@@ -97,20 +119,22 @@ namespace test {
    * The unsigned integer vector contains the values of the highest two 32-bit chunks.
    */
   void TestBase::AwaitRead::await_resume() noexcept {
-    s_vpi_value read_val;
+    s_vpi_value read_val{};
     read_val.format = vpiVectorVal;
 
     // These are for getting a current time reading
     const vpiHandle cbH = nullptr;
-    s_vpi_time tim;
+    s_vpi_time tim{};
     tim.type = vpiSimTime;
     vpi_get_time(cbH, &tim);
-    rdTime = (static_cast<unsigned long long>(tim.high) << 32) | static_cast<unsigned long long>(tim.low);
+    rdTime = (static_cast<unsigned long long>(tim.high) << 32) |
+      static_cast<unsigned long long>(tim.low);
 
     for (auto& pair : grouped_reads) {
       vpi_get_value(parent.getNetHandle(pair.first), &read_val);
 
-      const unsigned int vecval_len = (parent.getNetLength(pair.first) + 31) / 32; // number of 32-bit chunks required
+      const unsigned int vecval_len =
+        (parent.getNetLength(pair.first) + 31) / 32; // number of 32-bit chunks required
 
       // Allocate enough space for the resulting string
       std::string final_strValue;
@@ -122,7 +146,7 @@ namespace test {
         const unsigned int bvalue = read_val.value.vector[i].bval;
 
         // Only push back the first two 32-bit chunks
-        if (vecval_len - i <= 2) {
+        if (vecval_len - static_cast<unsigned int>(i) <= 2) {
           pair.second.uintValues.push_back(avalue);
         }
 
@@ -151,29 +175,14 @@ namespace test {
       pair.second.strValue = std::move(final_strValue);
     }
 
-    // Unregister the callback
-    vpi_remove_cb(cb_handle);
-
-    // Free the callback object
-    vpi_free_object(cb_handle);
-
-    // Clear the stored handle
-    cb_handle = nullptr;
+    // Unregister and free the callback only if it actually exists
+    if (cb_handle != nullptr) {
+      vpi_remove_cb(cb_handle);
+      vpi_free_object(cb_handle);
+      cb_handle = nullptr;
+    }
   }
 
-  /**
-   * Retrieves a string representation of a net's value from grouped reads.
-   *
-   * This function searches for the given string net name within the `grouped_reads` map.
-   * If found, it returns the corresponding value as a string. If the `base`
-   * parameter is 16, it converts the value to a hexadecimal string, otherwise it returns
-   * the binary representation of a string. If not found,
-   * it logs a warning and returns an empty string.
-   *
-   * @param netStr The name of the net to be searched in `grouped_reads`.
-   * @param base The numerical base for the string representation of the net's value. Currently supports base 16 (hex).
-   * @return The string representation of the net's value, or an empty string if the net is not found.
-   */
   std::string TestBase::AwaitRead::getStr(const std::string& netStr, const unsigned int base) {
     constexpr char EMPTY_STRING[] = "";
     if (const auto result = grouped_reads.find(netStr); result != grouped_reads.end()) {
@@ -183,7 +192,7 @@ namespace test {
       return result->second.strValue;
     }
 
-    printf("[WARNING]\tNo value for net: %s\n", netStr.c_str());
+    std::printf("[WARNING]\tNo value for net: %s\n", netStr.c_str());
     return EMPTY_STRING;
   }
 
@@ -197,19 +206,6 @@ namespace test {
     return getStr(netStr, 16);
   }
 
-  /**
-   * Retrieves a 64-bit unsigned integer from the grouped reads map.
-   *
-   * This function searches for the specified net string in the `grouped_reads` map.
-   * If found, it checks the number of available 32-bit unsigned integer values.
-   * - If there is only one 32-bit value, it returns it as a 64-bit integer.
-   * - If there are two 32-bit values, it combines them to form a 64-bit integer,
-   *   with the second value considered as the most significant bits.
-   * If the net string is not found, it logs a warning message and returns 0.
-   *
-   * @param netStr The net string to be searched in the `grouped_reads` map.
-   * @return A 64-bit unsigned integer extracted from the `grouped_reads` map or 0 if the net string is not found.
-   */
   unsigned long long int TestBase::AwaitRead::getNum(const std::string& netStr) {
     if (const auto result = grouped_reads.find(netStr); result != grouped_reads.end()) {
       if (const size_t value_count = result->second.uintValues.size(); value_count == 1) {
@@ -227,20 +223,10 @@ namespace test {
       return (static_cast<unsigned long long int>(value_high) << 32) + value_low;
     }
 
-    printf("[WARNING]\tNo value for net: %s\n", netStr.c_str());
+    std::printf("[WARNING]\tNo value for net: %s\n", netStr.c_str());
     return 0;
   }
 
-  /**
-   * Adds a new read operation to the grouped_reads map.
-   *
-   * This function initializes a read operation by creating an entry in the
-   * `grouped_reads` map with the specified net string and a default read value.
-   * This default value has an empty string for `strValue` and an empty vector
-   * for `uintValues`.
-   *
-   * @param netStr The name of the net to be added to the `grouped_reads` map.
-   */
   void TestBase::AwaitRead::read(const std::string& netStr) {
     constexpr char EMPTY_STRING[] = "";
     t_read_value readValue;
@@ -248,4 +234,4 @@ namespace test {
     readValue.strValue = EMPTY_STRING;
     grouped_reads.insert(std::make_pair(netStr, readValue));
   }
-}
+} // namespace test

@@ -28,7 +28,6 @@
 # VPI_INCLUDE_DIR: pointing to the location where the "vpi_user.h" file is located (again for
 # the case of iverilog it is "path/to/iverilog")
 
-
 # Main CMakeLists.txt for the library
 cmake_minimum_required(VERSION 3.5)
 
@@ -39,7 +38,8 @@ project(rapidvpi VERSION 0.0.1)
 include(CMakePackageConfigHelpers)
 
 # Set project variables
-set(vpi_lib_dir $ENV{VPI_LIB_DIR} CACHE PATH "Path to the VPI library directory")
+# NOTE: For Questa, you only need VPI_INCLUDE_DIR (no VPI_LIB_DIR).
+# set(vpi_lib_dir $ENV{VPI_LIB_DIR} CACHE PATH "Path to the VPI library directory")
 set(vpi_include_dir $ENV{VPI_INCLUDE_DIR} CACHE PATH "Path to the VPI include directory")
 
 # Ensure the variable is set
@@ -47,9 +47,10 @@ if (NOT vpi_include_dir)
   message(FATAL_ERROR "VPI_INCLUDE_DIR environment variable must be set or provided manually.")
 endif()
 
-if (NOT vpi_lib_dir)
-  message(FATAL_ERROR "VPI_LIB_DIR environment variable must be set or provided manually.")
-endif()
+# Icarus-only check removed: no VPI_LIB_DIR needed for Questa
+# if (NOT vpi_lib_dir)
+#   message(FATAL_ERROR "VPI_LIB_DIR environment variable must be set or provided manually.")
+# endif()
 
 # Compiler flags
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIC -Wall -I${vpi_include_dir}")
@@ -68,11 +69,11 @@ if(BUILD_SHARED_LIBRARY)
   # Build the shared library for internal use only
   add_library(rapidvpi.vpi SHARED src/entry.cpp)
 
-  # Find the VPI library
-  find_library(VPI_LIBRARY_NAME vpi ${vpi_lib_dir})
-  if(NOT VPI_LIBRARY_NAME)
-    message(FATAL_ERROR "VPI library not found")
-  endif()
+  # Icarus-only VPI library lookup removed for Questa:
+  # find_library(VPI_LIBRARY_NAME vpi ${vpi_lib_dir})
+  # if(NOT VPI_LIBRARY_NAME)
+  #   message(FATAL_ERROR "VPI library not found")
+  # endif()
 
   # Include directories for internal components and VPI
   target_include_directories(rapidvpi.vpi PRIVATE
@@ -82,7 +83,11 @@ if(BUILD_SHARED_LIBRARY)
           ${CMAKE_CURRENT_SOURCE_DIR}/src/testbase  # Testbase headers
           ${CMAKE_CURRENT_SOURCE_DIR}/src/testmanager  # Testmanager headers
   )
-  target_link_libraries(rapidvpi.vpi PRIVATE vpi core testbase scheduler testmanager)
+
+  # IMPORTANT for Questa:
+  #   Do NOT link any external vpi/libveriuser library.
+  #   The simulator provides VPI symbols internally.
+  target_link_libraries(rapidvpi.vpi PRIVATE core testbase scheduler testmanager)
 endif()
 
 # Install public headers and source files under rapidvpi folder to keep them organized

@@ -19,118 +19,130 @@
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
-
 #include "scheduler.hpp"
+#include <cstdio>
+#include <cstdint>
 
 namespace scheduler {
-    PLI_INT32 write_callback(p_cb_data data) {
-        // Retrieve the user data passed to the callback
-        auto* callbackData = reinterpret_cast<SchedulerCallbackData*>(data->user_data);
-
-        // Resume the coroutine
-        callbackData->handle.resume();
-
-        // Clean up the allocated memory
-        delete callbackData;
-
-        return 0;
+  PLI_INT32 write_callback(p_cb_data data) {
+    // Retrieve the user data passed to the callback
+    auto* callbackData = reinterpret_cast<SchedulerCallbackData*>(data->user_data);
+    if (!callbackData) {
+      return 0;
     }
 
-    PLI_INT32 read_callback(p_cb_data data) {
-        // Retrieve the user data passed to the callback
-        auto* callbackData = reinterpret_cast<SchedulerCallbackData*>(data->user_data);
+    // Resume the coroutine
+    callbackData->handle.resume();
 
-        // Resume the coroutine
-        callbackData->handle.resume();
+    // Clean up the allocated memory
+    delete callbackData;
+    data->user_data = nullptr;
 
-        // Clean up the allocated memory
-        delete callbackData;
+    return 0;
+  }
 
-        return 0;
+  PLI_INT32 read_callback(p_cb_data data) {
+    // Retrieve the user data passed to the callback
+    auto* callbackData = reinterpret_cast<SchedulerCallbackData*>(data->user_data);
+    if (!callbackData) {
+      return 0;
     }
 
-    /**
-     * @brief Callback function triggered by a value change event on a monitored net.
-     *
-     * This function resumes the coroutine associated with the event and cleans up the
-     * allocated memory for the callback data. It is invoked when the monitored net's
-     * value changes.
-     *
-     * @param data Pointer to the callback data structure.
-     * @return Always returns 0 indicating successful execution.
-     *
-     * The user data contains an `SchedulerCallbackData` structure which holds the coroutine
-     * handle to be resumed.
-     */
-    PLI_INT32 change_callback(p_cb_data data) {
-        // Retrieve the user data passed to the callback
-        auto* callbackData = reinterpret_cast<SchedulerCallbackData*>(data->user_data);
+    // Resume the coroutine
+    callbackData->handle.resume();
 
-        // Resume the coroutine
-        callbackData->handle.resume();
+    // Clean up the allocated memory
+    delete callbackData;
+    data->user_data = nullptr;
 
-        // Clean up the allocated memory
-        delete callbackData;
+    return 0;
+  }
 
-        return 0;
+  /**
+   * @brief Callback function triggered by a value change event on a monitored net.
+   *
+   * This is the NON-targeted variant: first change → resume coroutine.
+   * The actual new value is not inspected here; the AwaitChange awaiter
+   * will do the read in await_resume().
+   */
+  PLI_INT32 change_callback(p_cb_data data) {
+    // Retrieve the user data passed to the callback
+    auto* callbackData = reinterpret_cast<SchedulerCallbackData*>(data->user_data);
+    if (!callbackData) {
+      return 0;
     }
 
+    // At this point, for Questa, data->value == &callbackData->vpi_value
+    // and simulator has filled vpi_value for this event already.
+    // We don't need it here; AwaitChange::await_resume() will read the net.
 
-    /**
-     * @brief Callback function triggered by a value change event on a monitored net.
-     *
-     * This function is called when the value of a monitored net changes. It checks
-     * if this change matches the targeted change value specified in the user data.
-     * If the change matches, the respective coroutine is resumed.
-     *
-     * If the change does not math the monitored change, then coroutine is not resumed
-     * and simulator will again call this callback on next change.
-     *
-     * @param data Pointer to the callback data structure.
-     * @return Always returns 0 indicating successful execution.
-     *
-     * The user data contains a `SchedulerCallbackData` structure which holds the coroutine handle to be resumed.
-     * The value of the monitored net is read and compared against the target value stored in the callback data.
-     * If the value matches, the coroutine is resumed and the allocated memory for the callback data is cleaned up.
-     */
+    // Resume the coroutine
+    callbackData->handle.resume();
 
-    PLI_INT32 change_callback_targeted(p_cb_data data) {
-        // Retrieve the user data passed to the callback
-        auto* callbackData = reinterpret_cast<SchedulerCallbackData*>(data->user_data);
-        const unsigned short int net_length = callbackData->cb_change_target_value_length;
+    // Clean up the allocated memory
+    delete callbackData;
+    data->user_data = nullptr;
 
-        // read the value of the net monitored for a change
-        s_vpi_value read_val;
-        read_val.format = vpiVectorVal;
-        vpi_get_value(data->obj, &read_val);
+    return 0;
+  }
 
-        // Determine the comparison based on the length
-        if (net_length <= 32) {
-            if (callbackData->cb_change_target_value == static_cast<uint32_t>(read_val.value.vector[0].aval)) {
-                // Resume the coroutine
-                callbackData->handle.resume();
-
-                // Clean up the allocated memory
-                delete callbackData;
-            }
-        } else {
-            auto combined_value = static_cast<uint64_t>(read_val.value.vector[1].aval);
-            combined_value = (combined_value << 32) | static_cast<uint32_t>(read_val.value.vector[0].aval);
-
-            if (callbackData->cb_change_target_value == combined_value) {
-                // Resume the coroutine
-                callbackData->handle.resume();
-
-                // Clean up the allocated memory
-                delete callbackData;
-            }
-        }
-
-        return 0;
+  /**
+   * @brief Callback function triggered by a value change event on a monitored net.
+   *
+   * Targeted variant: only resumes coroutine once the changed value
+   * equals cb_change_target_value.
+   *
+   * If the change does not match the monitored change, the coroutine is not resumed
+   * and the callback remains registered. The simulator will invoke this callback
+   * again on the next change.
+   */
+  PLI_INT32 change_callback_targeted(p_cb_data data) {
+    // Retrieve the user data passed to the callback
+    auto* callbackData = reinterpret_cast<SchedulerCallbackData*>(data->user_data);
+    if (!callbackData) {
+      return 0;
     }
 
+    const unsigned int net_length = callbackData->cb_change_target_value_length;
 
+    // For Questa: data->value points to the same s_vpi_value we set up
+    // in AwaitChange::await_suspend (callbackData->vpi_value). We can either
+    // trust that, or re-call vpi_get_value. Using simulator-filled value:
+    s_vpi_value& read_val = callbackData->vpi_value;
 
+    // Defensive: if someone ever registered with a different format,
+    // make sure it is vector.
+    if (read_val.format != vpiVectorVal) {
+      read_val.format = vpiVectorVal;
+      vpi_get_value(data->obj, &read_val);
+    }
 
+    bool match = false;
 
-}
+    if (net_length <= 32) {
+      const uint32_t aval0 = static_cast<uint32_t>(read_val.value.vector[0].aval);
+      match = (callbackData->cb_change_target_value == aval0);
+    }
+    else {
+      // Combine the lowest two 32-bit chunks into a 64-bit value:
+      // [vec[1].aval] = high, [vec[0].aval] = low
+      uint64_t combined_value = static_cast<uint64_t>(read_val.value.vector[1].aval);
+      combined_value = (combined_value << 32) |
+        static_cast<uint32_t>(read_val.value.vector[0].aval);
+
+      match = (callbackData->cb_change_target_value == combined_value);
+    }
+
+    if (match) {
+      // Target reached: resume coroutine once, then free callbackData.
+      callbackData->handle.resume();
+      delete callbackData;
+      data->user_data = nullptr;
+    }
+    // If not matched: do NOT delete callbackData, because this callback
+    // will be called again on the next value change and still needs
+    // that user_data pointer to remain valid.
+
+    return 0;
+  }
+} // namespace scheduler

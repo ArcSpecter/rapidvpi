@@ -53,6 +53,8 @@ set(TEST_SOURCES
 # Create the shared library using the project name (ONLY user's test code)
 add_library(${PROJECT_NAME} SHARED ${TEST_SOURCES})
 
+
+
 # Specify include directories (for user's test folder, and VPI headers)
 target_include_directories(${PROJECT_NAME} PRIVATE
         /usr/local/include/rapidvpi/core
@@ -70,5 +72,3 @@ add_subdirectory(src/test/modules/test_impl2)
 # Link against the imported target from the rapidvpi library
 target_link_libraries(${PROJECT_NAME} PRIVATE rapidvpi::rapidvpi.vpi)
 
-# Add VPI library for simulation
-target_link_libraries(${PROJECT_NAME} PRIVATE vpi)

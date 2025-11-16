@@ -46,12 +46,12 @@ add_custom_command(
     OUTPUT ${OUTPUT_VVP}
     COMMAND ${CMAKE_COMMAND} -E make_directory ${SIM_OUTPUT_DIR}
     COMMAND iverilog
-        -g 2012
-        -o ${OUTPUT_VVP}
-        -s ${PROJECT_NAME}
-        -s dump
-        ${SRC_FILES}
-        ./dump.v
+    -g 2012
+    -o ${OUTPUT_VVP}
+    -s ${PROJECT_NAME}
+    -s dump
+    ${SRC_FILES}
+    ./dump.v
     DEPENDS ${SRC_FILES}
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     COMMENT "Compiling Verilog sources to generate ${PROJECT_NAME}.vvp"
@@ -92,3 +92,51 @@ add_custom_target(
     COMMAND ${CMAKE_COMMAND} -E rm -rf ${CMAKE_BINARY_DIR}
     COMMENT "Removing the entire build directory (${CMAKE_BINARY_DIR})"
 )
+
+#
+# QuestaSim compile + run
+#
+
+set(QUESTA_SIM_DIR "${CMAKE_BINARY_DIR}/questa")
+file(MAKE_DIRECTORY ${QUESTA_SIM_DIR})
+
+# Absolute path to vip_template build dir
+get_filename_component(VPI_ABS_DIR
+    "${CMAKE_SOURCE_DIR}/../vip_template/cmake-build-debug"
+    REALPATH)
+
+add_custom_target(
+    questa_compile
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${QUESTA_SIM_DIR}
+    COMMAND vlib ${QUESTA_SIM_DIR}/work
+    COMMAND vlog -work ${QUESTA_SIM_DIR}/work +acc ${SRC_FILES}
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    COMMENT "Compiling SystemVerilog files in QuestaSim"
+)
+
+add_custom_target(
+    questa_run
+    COMMAND env LD_PRELOAD=/usr/lib64/libstdc++.so.6 vsim -c
+    -lib work
+    dut_top
+    -pli ${VPI_ABS_DIR}/libvip_template.so
+    -do "run 1us; quit"
+    DEPENDS questa_compile
+    WORKING_DIRECTORY ${QUESTA_SIM_DIR}
+    COMMENT "Running QuestaSim simulation with modern libstdc++"
+)
+
+
+
+add_custom_target(
+    questa_run_gui
+    COMMAND env LD_PRELOAD=/usr/lib64/libstdc++.so.6
+    vsim -gui
+    -lib work
+    -pli ${VPI_ABS_DIR}/libvip_template.so
+    dut_top
+    DEPENDS questa_compile
+    WORKING_DIRECTORY ${QUESTA_SIM_DIR}
+    COMMENT "Running QuestaSim simulation with modern libstdc++"
+)
+
