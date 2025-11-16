@@ -20,7 +20,6 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-
 #ifndef DUT_TOP_TESTBASE_HPP
 #define DUT_TOP_TESTBASE_HPP
 
@@ -280,58 +279,28 @@ namespace test {
     };
 
     // ============================================================
-    // RunTask
+    // RunTask  (top-level test coroutines)
     // ============================================================
     struct RunTask {
       struct promise_type {
-        TestBase* test_instance;
-        std::coroutine_handle<> handle;
+        using Handle = std::coroutine_handle<promise_type>;
+
+        TestBase* test_instance{nullptr};
 
         RunTask get_return_object() {
-          return RunTask{std::coroutine_handle<promise_type>::from_promise(*this)};
+          return RunTask{Handle::from_promise(*this)};
         }
 
-        std::suspend_never initial_suspend() { return {}; }
+        std::suspend_never initial_suspend() noexcept { return {}; }
 
-        // CHANGE THIS:
-        std::suspend_always final_suspend() noexcept { return {}; }
-
-        void return_void() {}
-        void unhandled_exception() { std::terminate(); }
-      };
-
-      std::coroutine_handle<promise_type> handle;
-    };
-
-
-    // ============================================================
-    // RunUserTask
-    // ============================================================
-    struct RunUserTask {
-      struct promise_type {
-        // We'll keep track of the parent handle so we can resume it later
-        std::coroutine_handle<> parentHandle;
-
-        // Create the coroutine object
-        RunUserTask get_return_object() {
-          return RunUserTask{std::coroutine_handle<promise_type>::from_promise(*this)};
-        }
-
-        // Start suspended
-        std::suspend_always initial_suspend() noexcept {
-          return {};
-        }
-
-        // In final_suspend, resume the parent (if valid)
+        // When the top-level test coroutine finishes, destroy its frame.
         auto final_suspend() noexcept {
           struct FinalAwaiter {
             bool await_ready() const noexcept { return false; }
 
-            void await_suspend(std::coroutine_handle<promise_type> h) noexcept {
-              auto& promise = h.promise();
-              if (promise.parentHandle) {
-                promise.parentHandle.resume();
-              }
+            void await_suspend(Handle h) noexcept {
+              // Coroutine has fully finished, safe to destroy.
+              h.destroy();
             }
 
             void await_resume() noexcept {
@@ -347,7 +316,69 @@ namespace test {
       };
 
       using Handle = std::coroutine_handle<promise_type>;
-      Handle handle;
+      Handle handle{};
+
+      explicit RunTask(Handle h) : handle(h) {
+      }
+
+      RunTask(const RunTask&) = default;
+      RunTask& operator=(const RunTask&) = default;
+      RunTask(RunTask&&) = default;
+      RunTask& operator=(RunTask&&) = default;
+
+      ~RunTask() = default; // non-owning wrapper; coroutine self-destroys
+    };
+
+    // ============================================================
+    // RunUserTask  (nested user coroutines: delay_ns, clock, etc.)
+    // ============================================================
+    struct RunUserTask {
+      struct promise_type {
+        using Handle = std::coroutine_handle<promise_type>;
+
+        // Parent coroutine to resume when this child finishes
+        std::coroutine_handle<> parentHandle{};
+
+        // Create the coroutine object
+        RunUserTask get_return_object() {
+          return RunUserTask{Handle::from_promise(*this)};
+        }
+
+        // Start suspended; parent explicitly resumes via co_await
+        std::suspend_always initial_suspend() noexcept {
+          return {};
+        }
+
+        // On completion: resume parent, then destroy child frame
+        auto final_suspend() noexcept {
+          struct FinalAwaiter {
+            bool await_ready() const noexcept { return false; }
+
+            void await_suspend(Handle h) noexcept {
+              auto& promise = h.promise();
+
+              if (promise.parentHandle) {
+                promise.parentHandle.resume();
+              }
+
+              // Child coroutine owns itself and destroys its frame here
+              h.destroy();
+            }
+
+            void await_resume() noexcept {
+            }
+          };
+          return FinalAwaiter{};
+        }
+
+        void return_void() {
+        }
+
+        void unhandled_exception() { std::terminate(); }
+      };
+
+      using Handle = std::coroutine_handle<promise_type>;
+      Handle handle{};
 
       explicit RunUserTask(Handle h) : handle(h) {
         if (!h) {
@@ -355,11 +386,13 @@ namespace test {
         }
       }
 
-      ~RunUserTask() {
-        if (handle) {
-          handle.destroy();
-        }
-      }
+      // Non-owning: do NOT call destroy() here; child destroys itself in final_suspend.
+      ~RunUserTask() = default;
+
+      RunUserTask(const RunUserTask&) = default;
+      RunUserTask& operator=(const RunUserTask&) = default;
+      RunUserTask(RunUserTask&&) = default;
+      RunUserTask& operator=(RunUserTask&&) = default;
 
       // The operator co_await will track the parent's handle and then resume this child
       auto operator co_await() noexcept {
@@ -374,6 +407,7 @@ namespace test {
           }
 
           void await_resume() noexcept {
+            // Parent continues after child is completely finished
           }
         };
         return Awaiter{handle};
@@ -383,7 +417,6 @@ namespace test {
     // ============================================================
     // Factory helpers
     // ============================================================
-
     template <TimeUnit T>
     AwaitWrite getCoWrite(const double delay) {
       constexpr double factor = TimeUnitConversion<T>::factor;
