@@ -120,7 +120,7 @@ add_custom_target(
     -lib work
     dut_top
     -pli ${VPI_ABS_DIR}/libvip_template.so
-    -do "run 1us; quit"
+    -do "run 1us"
     DEPENDS questa_compile
     WORKING_DIRECTORY ${QUESTA_SIM_DIR}
     COMMENT "Running QuestaSim simulation with modern libstdc++"

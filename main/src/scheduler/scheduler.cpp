@@ -24,124 +24,187 @@
 #include <cstdint>
 
 namespace scheduler {
+  // cbAfterDelay -> used by AwaitWrite
   PLI_INT32 write_callback(p_cb_data data) {
-    // Retrieve the user data passed to the callback
-    auto* callbackData = reinterpret_cast<SchedulerCallbackData*>(data->user_data);
-    if (!callbackData) {
-      return 0;
+    std::printf("[DBG] write_callback entered: data=%p reason=%d obj=%p\n",
+                static_cast<void*>(data),
+                data ? data->reason : -1,
+                data ? static_cast<void*>(data->obj) : nullptr);
+
+    auto* callbackData =
+      data
+        ? reinterpret_cast<SchedulerCallbackData*>(data->user_data)
+        : nullptr;
+
+    std::printf("[DBG] write_callback: user_data=%p\n",
+                static_cast<void*>(callbackData));
+
+    std::coroutine_handle<> h{};
+    if (callbackData) {
+      h = callbackData->handle;
     }
 
-    // Resume the coroutine
-    callbackData->handle.resume();
+    if (h) {
+      std::printf("[DBG] write_callback: resuming coroutine %p\n",
+                  static_cast<void*>(h.address()));
+      h.resume();
+    }
+    else {
+      std::printf("[DBG] write_callback: NULL handle or user_data\n");
+    }
 
-    // Clean up the allocated memory
-    delete callbackData;
-    data->user_data = nullptr;
-
+    // IMPORTANT for now: do NOT delete callbackData here.
+    // We’ll accept a small leak during debugging to avoid use-after-free.
     return 0;
   }
 
+  // cbReadOnlySynch -> used by AwaitRead
   PLI_INT32 read_callback(p_cb_data data) {
-    // Retrieve the user data passed to the callback
-    auto* callbackData = reinterpret_cast<SchedulerCallbackData*>(data->user_data);
-    if (!callbackData) {
-      return 0;
+    std::printf("[DBG] read_callback entered: data=%p reason=%d obj=%p\n",
+                static_cast<void*>(data),
+                data ? data->reason : -1,
+                data ? static_cast<void*>(data->obj) : nullptr);
+
+    auto* callbackData =
+      data
+        ? reinterpret_cast<SchedulerCallbackData*>(data->user_data)
+        : nullptr;
+
+    std::printf("[DBG] read_callback: user_data=%p\n",
+                static_cast<void*>(callbackData));
+
+    std::coroutine_handle<> h{};
+    if (callbackData) {
+      h = callbackData->handle;
     }
 
-    // Resume the coroutine
-    callbackData->handle.resume();
+    if (h) {
+      std::printf("[DBG] read_callback: resuming coroutine %p\n",
+                  static_cast<void*>(h.address()));
+      h.resume();
+    }
+    else {
+      std::printf("[DBG] read_callback: NULL handle or user_data\n");
+    }
 
-    // Clean up the allocated memory
-    delete callbackData;
-    data->user_data = nullptr;
-
+    // No delete here either.
     return 0;
   }
 
-  /**
-   * @brief Callback function triggered by a value change event on a monitored net.
-   *
-   * This is the NON-targeted variant: first change → resume coroutine.
-   * The actual new value is not inspected here; the AwaitChange awaiter
-   * will do the read in await_resume().
-   */
+  // cbValueChange, non-targeted -> used by AwaitChange (any change)
   PLI_INT32 change_callback(p_cb_data data) {
-    // Retrieve the user data passed to the callback
-    auto* callbackData = reinterpret_cast<SchedulerCallbackData*>(data->user_data);
-    if (!callbackData) {
-      return 0;
+    std::printf("[DBG] change_callback entered: data=%p reason=%d obj=%p\n",
+                static_cast<void*>(data),
+                data ? data->reason : -1,
+                data ? static_cast<void*>(data->obj) : nullptr);
+
+    auto* callbackData =
+      data
+        ? reinterpret_cast<SchedulerCallbackData*>(data->user_data)
+        : nullptr;
+
+    std::printf("[DBG] change_callback: user_data=%p\n",
+                static_cast<void*>(callbackData));
+
+    std::coroutine_handle<> h{};
+    if (callbackData) {
+      h = callbackData->handle;
     }
 
-    // At this point, for Questa, data->value == &callbackData->vpi_value
-    // and simulator has filled vpi_value for this event already.
-    // We don't need it here; AwaitChange::await_resume() will read the net.
+    if (h) {
+      std::printf("[DBG] change_callback: resuming coroutine %p\n",
+                  static_cast<void*>(h.address()));
+      h.resume();
+    }
+    else {
+      std::printf("[DBG] change_callback: NULL handle or user_data\n");
+    }
 
-    // Resume the coroutine
-    callbackData->handle.resume();
-
-    // Clean up the allocated memory
-    delete callbackData;
-    data->user_data = nullptr;
-
+    // No delete here either.
     return 0;
   }
 
-  /**
-   * @brief Callback function triggered by a value change event on a monitored net.
-   *
-   * Targeted variant: only resumes coroutine once the changed value
-   * equals cb_change_target_value.
-   *
-   * If the change does not match the monitored change, the coroutine is not resumed
-   * and the callback remains registered. The simulator will invoke this callback
-   * again on the next change.
-   */
+  // cbValueChange, targeted -> used by AwaitChange (target bit/value)
   PLI_INT32 change_callback_targeted(p_cb_data data) {
-    // Retrieve the user data passed to the callback
-    auto* callbackData = reinterpret_cast<SchedulerCallbackData*>(data->user_data);
+    std::printf("[DBG] change_callback_targeted entered: data=%p reason=%d obj=%p\n",
+                static_cast<void*>(data),
+                data ? data->reason : -1,
+                data ? static_cast<void*>(data->obj) : nullptr);
+
+    auto* callbackData =
+      data
+        ? reinterpret_cast<SchedulerCallbackData*>(data->user_data)
+        : nullptr;
+
+    std::printf("[DBG] change_callback_targeted: user_data=%p\n",
+                static_cast<void*>(callbackData));
+
     if (!callbackData) {
+      std::printf("[DBG] change_callback_targeted: NULL callbackData, returning.\n");
       return 0;
     }
 
     const unsigned int net_length = callbackData->cb_change_target_value_length;
+    std::printf("[DBG] change_callback_targeted: target_value=%llu, len=%u\n",
+                static_cast<unsigned long long>(callbackData->cb_change_target_value),
+                net_length);
 
-    // For Questa: data->value points to the same s_vpi_value we set up
-    // in AwaitChange::await_suspend (callbackData->vpi_value). We can either
-    // trust that, or re-call vpi_get_value. Using simulator-filled value:
-    s_vpi_value& read_val = callbackData->vpi_value;
-
-    // Defensive: if someone ever registered with a different format,
-    // make sure it is vector.
-    if (read_val.format != vpiVectorVal) {
-      read_val.format = vpiVectorVal;
-      vpi_get_value(data->obj, &read_val);
-    }
+    // Read current value of the watched net
+    s_vpi_value read_val{};
+    read_val.format = vpiVectorVal;
+    vpi_get_value(data->obj, &read_val);
 
     bool match = false;
+    unsigned long long cur_val = 0;
 
     if (net_length <= 32) {
-      const uint32_t aval0 = static_cast<uint32_t>(read_val.value.vector[0].aval);
-      match = (callbackData->cb_change_target_value == aval0);
+      const auto aval0 =
+        static_cast<std::uint32_t>(read_val.value.vector[0].aval);
+      cur_val = static_cast<unsigned long long>(aval0);
+
+      std::printf("[DBG] change_callback_targeted: current value (<=32) = 0x%llx\n",
+                  cur_val);
+
+      if (callbackData->cb_change_target_value == cur_val) {
+        match = true;
+      }
     }
     else {
-      // Combine the lowest two 32-bit chunks into a 64-bit value:
-      // [vec[1].aval] = high, [vec[0].aval] = low
-      uint64_t combined_value = static_cast<uint64_t>(read_val.value.vector[1].aval);
-      combined_value = (combined_value << 32) |
-        static_cast<uint32_t>(read_val.value.vector[0].aval);
+      const auto aval0 =
+        static_cast<std::uint32_t>(read_val.value.vector[0].aval);
+      const auto aval1 =
+        static_cast<std::uint32_t>(read_val.value.vector[1].aval);
 
-      match = (callbackData->cb_change_target_value == combined_value);
+      std::uint64_t combined =
+        (static_cast<std::uint64_t>(aval1) << 32) |
+        static_cast<std::uint64_t>(aval0);
+      cur_val = combined;
+
+      std::printf("[DBG] change_callback_targeted: current value (>32) = 0x%llx\n",
+                  cur_val);
+
+      if (callbackData->cb_change_target_value == combined) {
+        match = true;
+      }
     }
 
-    if (match) {
-      // Target reached: resume coroutine once, then free callbackData.
-      callbackData->handle.resume();
-      delete callbackData;
-      data->user_data = nullptr;
+    if (!match) {
+      std::printf("[DBG] change_callback_targeted: no match, keep callback.\n");
+      // Don’t delete user_data; we want to keep waiting for the right value.
+      return 0;
     }
-    // If not matched: do NOT delete callbackData, because this callback
-    // will be called again on the next value change and still needs
-    // that user_data pointer to remain valid.
+
+    std::printf("[DBG] change_callback_targeted: MATCH, resuming coroutine %p\n",
+                static_cast<void*>(callbackData->handle.address()));
+
+    std::coroutine_handle<> h = callbackData->handle;
+
+    // Even on match, for now we DON’T delete callbackData here.
+    // (We may make this one-shot later once everything is stable.)
+
+    if (h) {
+      h.resume();
+    }
 
     return 0;
   }

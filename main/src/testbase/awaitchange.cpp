@@ -21,6 +21,7 @@
 // SOFTWARE.
 
 #include "testbase.hpp"
+#include <cstdio>
 
 namespace test {
   template <TimeUnit T>
@@ -37,14 +38,13 @@ namespace test {
   template double TestBase::AwaitChange::getTime<us>() const;
   template double TestBase::AwaitChange::getTime<ms>() const;
 
-  /**
-   * This method suspends the current coroutine by registering a callback that will resume
-   * it when a value change occurs on a monitored net in a simulation environment.
-   *
-   * @param h The coroutine handle that needs to be resumed upon the value change event.
-   */
   void TestBase::AwaitChange::await_suspend(std::coroutine_handle<> h) {
     handle = h;
+
+    std::printf("[DBG] AwaitChange::await_suspend enter, net='%s', targeted=%d, handle=%p\n",
+                net.c_str(),
+                static_cast<int>(change_is_targeted),
+                static_cast<void*>(handle.address()));
 
     // Allocate and prepare the callback data
     auto callbackData = std::make_unique<scheduler::SchedulerCallbackData>();
@@ -52,6 +52,9 @@ namespace test {
 
     // Get the net handle we are monitoring
     vpiHandle net_handle = parent.getNetHandle(net);
+    std::printf("[DBG] AwaitChange::await_suspend net_handle=%p\n",
+                static_cast<void*>(net_handle));
+
     if (net_handle == nullptr) {
       std::printf("[ERROR]\tAwaitChange::await_suspend: net '%s' has NULL handle, "
                   "cannot register cbValueChange.\n",
@@ -64,8 +67,6 @@ namespace test {
     callbackData->time.high = 0;
     callbackData->time.low = 0;
 
-    // We don't actually use 'vpi_value' contents in await_resume(), but Questa
-    // insists this pointer is non-null for cbValueChange.
     callbackData->vpi_value.format = vpiVectorVal;
     callbackData->vpi_value.value.vector = nullptr; // simulator may or may not fill this
 
@@ -80,14 +81,19 @@ namespace test {
       callbackData->cb_change_target_value = change_target_value;
       callbackData->cb_change_target_value_length = parent.getNetLength(net);
       cb_data.cb_rtn = &scheduler::change_callback_targeted;
+      std::printf("[DBG] AwaitChange::await_suspend: targeted change, target=%llu len=%u\n",
+                  static_cast<unsigned long long>(change_target_value),
+                  parent.getNetLength(net));
     }
     else {
       cb_data.cb_rtn = &scheduler::change_callback;
+      std::printf("[DBG] AwaitChange::await_suspend: non-targeted change\n");
     }
 
     // Pass pointer, but do not release ownership yet
     cb_data.user_data = reinterpret_cast<PLI_BYTE8*>(callbackData.get());
 
+    std::printf("[DBG] AwaitChange::await_suspend: calling vpi_register_cb (cbValueChange)\n");
     vpiHandle cbH = vpi_register_cb(&cb_data);
     if (cbH == nullptr) {
       std::printf("[WARNING]\tCannot register VPI Callback. TestBase::AwaitChange:: %s for net '%s'\n",
@@ -100,7 +106,7 @@ namespace test {
                     err.code ? err.code : "(null)",
                     err.message ? err.message : "(null)",
                     err.file ? err.file : "(null)",
-                    err.line);
+                    static_cast<int>(err.line));
       }
       else {
         std::printf("[VPI ERROR]\tNo additional VPI error info.\n");
@@ -111,15 +117,17 @@ namespace test {
       return;
     }
 
+    std::printf("[DBG] AwaitChange::await_suspend: vpi_register_cb OK, cb_handle=%p\n",
+                static_cast<void*>(cbH));
+
     // Success: scheduler::change_callback(_targeted) will delete user_data.
     (void)callbackData.release();
-    cb_handle = cbH; // save handle so that we can unregister inside await_resume()
+    cb_handle = cbH; // save handle so that we can unregister if needed
   }
 
-  /**
-   * Resume the suspended coroutine and process the value change on a monitored net.
-   */
   void TestBase::AwaitChange::await_resume() noexcept {
+    std::printf("[DBG] AwaitChange::await_resume enter, net='%s'\n", net.c_str());
+
     // Get current simulation time
     const vpiHandle cbH = nullptr;
     s_vpi_time tim{};
@@ -128,11 +136,17 @@ namespace test {
     rdTime = (static_cast<unsigned long long>(tim.high) << 32) |
       static_cast<unsigned long long>(tim.low);
 
+    std::printf("[DBG] AwaitChange::await_resume: time=%llu\n",
+                static_cast<unsigned long long>(rdTime));
+
     // Read the value being changed
     s_vpi_value read_val{};
     read_val.format = vpiVectorVal;
     vpi_get_value(parent.getNetHandle(net), &read_val);
     const unsigned short int net_length = parent.getNetLength(net);
+
+    std::printf("[DBG] AwaitChange::await_resume: net_length=%u\n",
+                static_cast<unsigned int>(net_length));
 
     // Clear the previous change value
     rd_change_value.strValue.clear();
@@ -141,7 +155,6 @@ namespace test {
     const unsigned int vecval_len =
       (static_cast<unsigned int>(net_length) + 31) / 32; // number of 32-bit chunks required
 
-    // Allocate enough space for the resulting string
     std::string final_strValue;
     final_strValue.reserve(vecval_len * 32);
 
@@ -156,19 +169,13 @@ namespace test {
       const unsigned int avalue = read_val.value.vector[i].aval;
       const unsigned int bvalue = read_val.value.vector[i].bval;
 
-      // bits from MSB to LSB for each 32-bit word
       for (int j = 31; j >= 0; --j) {
         char bit_representation;
         const bool a_bit = (avalue & (1u << j)) != 0;
         const bool b_bit = (bvalue & (1u << j)) != 0;
 
         if (b_bit) {
-          if (a_bit) {
-            bit_representation = 'x';
-          }
-          else {
-            bit_representation = 'z';
-          }
+          bit_representation = a_bit ? 'x' : 'z';
         }
         else {
           bit_representation = a_bit ? '1' : '0';
@@ -177,15 +184,15 @@ namespace test {
       }
     }
 
-    // Assign the properly formatted string value
     rd_change_value.strValue = std::move(final_strValue);
 
-    // Unregister and free the callback, but only if it was actually registered
-    if (cb_handle != nullptr) {
-      vpi_remove_cb(cb_handle);
-      vpi_free_object(cb_handle);
-      cb_handle = nullptr;
-    }
+    std::printf("[DBG] AwaitChange::await_resume: strValue length=%zu\n",
+                rd_change_value.strValue.size());
+
+    // NOTE: we do NOT call vpi_remove_cb here because the callback
+    // lifetime is managed by the simulator and our scheduler::change_callback
+    // already deleted user_data. cb_handle was only used if we wanted to cancel.
+    cb_handle = nullptr;
   }
 
   unsigned long long int TestBase::AwaitChange::getNum() {
