@@ -53,8 +53,8 @@ namespace scheduler {
       std::printf("[DBG] write_callback: NULL handle or user_data\n");
     }
 
-    // cbAfterDelay is one-shot. The simulator will drop the callback;
-    // we only need to free our user_data.
+    // cbAfterDelay is one-shot. Simulator will drop the callback;
+    // we only need to free our user_data now.
     if (callbackData) {
       delete callbackData;
       data->user_data = nullptr;
@@ -107,7 +107,7 @@ namespace scheduler {
     std::printf("[DBG] change_callback entered: data=%p reason=%d obj=%p\n",
                 static_cast<void*>(data),
                 data ? data->reason : -1,
-                data ? static_cast<void*>(data->obj) : nullptr);
+                data ? data->obj : nullptr);
 
     auto* callbackData =
       data
@@ -131,8 +131,8 @@ namespace scheduler {
       std::printf("[DBG] change_callback: NULL handle or user_data\n");
     }
 
-    // Non-targeted cbValueChange is one-shot in our scheme:
-    // remove the callback and free user_data so it cannot fire again.
+    // Non-targeted cbValueChange: we only care about first change.
+    // Remove callback and free user_data so it cannot fire again.
     if (callbackData) {
       if (callbackData->cb_handle) {
         vpi_remove_cb(callbackData->cb_handle);
@@ -150,7 +150,7 @@ namespace scheduler {
     std::printf("[DBG] change_callback_targeted entered: data=%p reason=%d obj=%p\n",
                 static_cast<void*>(data),
                 data ? data->reason : -1,
-                data ? static_cast<void*>(data->obj) : nullptr);
+                data ? data->obj : nullptr);
 
     auto* callbackData =
       data
@@ -211,7 +211,7 @@ namespace scheduler {
 
     if (!match) {
       std::printf("[DBG] change_callback_targeted: no match, keep callback.\n");
-      // Do not delete user_data; we want to keep waiting for the right value.
+      // Keep waiting; do NOT free callbackData yet.
       return 0;
     }
 

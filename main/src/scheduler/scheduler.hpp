@@ -30,7 +30,8 @@
 
 namespace scheduler {
   struct SchedulerCallbackData {
-    std::coroutine_handle<> handle{}; // coroutine to resume
+    // Coroutine to resume when callback fires
+    std::coroutine_handle<> handle{};
 
     // For targeted cbValueChange
     unsigned long long cb_change_target_value{}; // target value
@@ -38,10 +39,10 @@ namespace scheduler {
 
     // Persistent VPI time/value storage for this callback.
     // These must remain valid while the callback is registered.
-    s_vpi_time time{}; // for cb_data.time
-    s_vpi_value vpi_value{}; // for cb_data.value
+    s_vpi_time time{}; // used for cb_data.time (cbAfterDelay, cbReadOnlySynch, cbValueChange)
+    s_vpi_value vpi_value{}; // used for cb_data.value (cbValueChange, etc.)
 
-    // For cbValueChange+vpiVectorVal we must provide a backing array.
+    // Optional backing storage if you ever want vpiVectorVal with value.vector
     std::vector<s_vpi_vecval> vec;
 
     // For cbValueChange callbacks, remember the registered callback handle

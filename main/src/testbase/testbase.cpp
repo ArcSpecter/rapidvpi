@@ -21,8 +21,6 @@
 // SOFTWARE.
 
 
-
-
 #include <string>
 #include <cstdio>
 #include "testbase.hpp"

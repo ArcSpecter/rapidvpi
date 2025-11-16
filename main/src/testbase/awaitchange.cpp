@@ -46,11 +46,9 @@ namespace test {
                 static_cast<int>(change_is_targeted),
                 static_cast<void*>(handle.address()));
 
-    // Allocate and prepare the callback data
     auto callbackData = std::make_unique<scheduler::SchedulerCallbackData>();
-    callbackData->handle = h; // Store the coroutine handle
+    callbackData->handle = h;
 
-    // Get the net handle we are monitoring
     vpiHandle net_handle = parent.getNetHandle(net);
     std::printf("[DBG] AwaitChange::await_suspend net_handle=%p\n",
                 static_cast<void*>(net_handle));
@@ -62,20 +60,20 @@ namespace test {
       return;
     }
 
-    // Initialise persistent time/value storage for Questa
+    // ---- Persistent time + value storage for Questa (MUST be non-null) ----
     callbackData->time.type = vpiSimTime;
     callbackData->time.high = 0;
     callbackData->time.low = 0;
 
-    callbackData->vpi_value.format = vpiVectorVal;
-    callbackData->vpi_value.value.vector = nullptr; // simulator may or may not fill this
+    callbackData->vpi_value.format = vpiIntVal;
+    callbackData->vpi_value.value.integer = 0;
 
     // Prepare cb_data
     s_cb_data cb_data{};
     cb_data.reason = cbValueChange;
     cb_data.obj = net_handle;
-    cb_data.time = &callbackData->time; // persistent storage
-    cb_data.value = &callbackData->vpi_value; // persistent storage
+    cb_data.time = &callbackData->time; // <- non-null now
+    cb_data.value = &callbackData->vpi_value; // <- non-null (from previous fix)
 
     if (change_is_targeted) {
       callbackData->cb_change_target_value = change_target_value;
@@ -90,7 +88,6 @@ namespace test {
       std::printf("[DBG] AwaitChange::await_suspend: non-targeted change\n");
     }
 
-    // Pass pointer, but do not release ownership yet
     cb_data.user_data = reinterpret_cast<PLI_BYTE8*>(callbackData.get());
 
     std::printf("[DBG] AwaitChange::await_suspend: calling vpi_register_cb (cbValueChange)\n");
@@ -99,7 +96,6 @@ namespace test {
       std::printf("[WARNING]\tCannot register VPI Callback. TestBase::AwaitChange:: %s for net '%s'\n",
                   __FUNCTION__, net.c_str());
 
-      // Ask the simulator what went wrong
       s_vpi_error_info err{};
       if (vpi_chk_error(&err)) {
         std::printf("[VPI ERROR]\tcode=%s msg=%s file=%s line=%d\n",
@@ -113,20 +109,17 @@ namespace test {
       }
 
       cb_handle = nullptr;
-      // unique_ptr will clean callbackData because we didn't release()
-      return;
+      return; // unique_ptr auto-frees callbackData
     }
 
     std::printf("[DBG] AwaitChange::await_suspend: vpi_register_cb OK, cb_handle=%p\n",
                 static_cast<void*>(cbH));
 
-    // Remember callback handle inside scheduler data so callback can remove itself.
     callbackData->cb_handle = cbH;
-
-    // Success: scheduler::change_callback(_targeted) will remove cb and delete user_data.
-    (void)callbackData.release();
-    cb_handle = cbH; // optional: for future explicit cancel API
+    (void)callbackData.release(); // hand off lifetime to the callback
+    cb_handle = cbH;
   }
+
 
   void TestBase::AwaitChange::await_resume() noexcept {
     std::printf("[DBG] AwaitChange::await_resume enter, net='%s'\n", net.c_str());
@@ -192,9 +185,8 @@ namespace test {
     std::printf("[DBG] AwaitChange::await_resume: strValue length=%zu\n",
                 rd_change_value.strValue.size());
 
-    // Note: scheduler::change_callback(_targeted) already removed the cb
-    // and deleted user_data. cb_handle here is only for cancel-before-fire,
-    // which we don't yet implement, so just clear the local copy.
+    // scheduler::change_callback(_targeted) already removed the cb
+    // and deleted user_data on the firing edge.
     cb_handle = nullptr;
   }
 

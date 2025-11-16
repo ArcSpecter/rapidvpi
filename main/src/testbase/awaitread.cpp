@@ -24,6 +24,9 @@
 #include <cstdio>
 
 namespace test {
+  // ============================================================
+  // Delay helpers
+  // ============================================================
   template <TimeUnit T>
   void TestBase::AwaitRead::setDelay(const double delay) {
     constexpr double factor = TimeUnitConversion<T>::factor;
@@ -54,6 +57,9 @@ namespace test {
   template double TestBase::AwaitRead::getTime<us>() const;
   template double TestBase::AwaitRead::getTime<ms>() const;
 
+  // ============================================================
+  // Core awaitable
+  // ============================================================
   void TestBase::AwaitRead::await_suspend(std::coroutine_handle<> h) {
     handle = h;
 
@@ -61,22 +67,25 @@ namespace test {
                 static_cast<unsigned long long>(delay),
                 static_cast<void*>(handle.address()));
 
+    // Allocate callback data on heap (owned until callback fires)
     auto callbackData = std::make_unique<scheduler::SchedulerCallbackData>();
     callbackData->handle = h;
 
-    // Persistent time
+    // Persistent time for Questa (MUST be non-null for cbReadOnlySynch)
     callbackData->time.type = vpiSimTime;
     callbackData->time.high = 0;
-    callbackData->time.low = delay;
+    callbackData->time.low = static_cast<PLI_INT32>(delay);
+
+    // We don't need .vpi_value for cbReadOnlySynch, so leave it default-init
 
     s_cb_data cb_data{};
     cb_data.reason = cbReadOnlySynch;
     cb_data.cb_rtn = &scheduler::read_callback;
     cb_data.obj = nullptr;
-    cb_data.time = &callbackData->time; // persistent
+    cb_data.time = &callbackData->time; // <<< IMPORTANT: non-null persistent time
     cb_data.value = nullptr; // allowed for cbReadOnlySynch
-
-    cb_data.user_data = reinterpret_cast<PLI_BYTE8*>(callbackData.get());
+    cb_data.user_data =
+      reinterpret_cast<PLI_BYTE8*>(callbackData.get());
 
     std::printf("[DBG] AwaitRead::await_suspend: calling vpi_register_cb (cbReadOnlySynch)\n");
     vpiHandle cbH = vpi_register_cb(&cb_data);
@@ -97,12 +106,14 @@ namespace test {
       }
 
       cb_handle = nullptr;
+      // unique_ptr auto-frees callbackData
       return;
     }
 
     std::printf("[DBG] AwaitRead::await_suspend: vpi_register_cb OK, cb_handle=%p\n",
                 static_cast<void*>(cbH));
 
+    // Hand ownership of callbackData to the simulator callback
     (void)callbackData.release();
     cb_handle = cbH;
   }
@@ -110,10 +121,7 @@ namespace test {
   void TestBase::AwaitRead::await_resume() noexcept {
     std::printf("[DBG] AwaitRead::await_resume enter\n");
 
-  s_vpi_value read_val{};
-    read_val.format = vpiVectorVal;
-
-    // time sampling
+    // sample current simulation time
     const vpiHandle cbH = nullptr;
     s_vpi_time tim{};
     tim.type = vpiSimTime;
@@ -123,6 +131,9 @@ namespace test {
 
     std::printf("[DBG] AwaitRead::await_resume: time=%llu, num_grouped_reads=%zu\n",
                 rdTime, grouped_reads.size());
+
+    s_vpi_value read_val{};
+    read_val.format = vpiVectorVal;
 
     for (auto& pair : grouped_reads) {
       const std::string& netStr = pair.first;
@@ -136,11 +147,12 @@ namespace test {
       std::string final_strValue;
       final_strValue.reserve(vecval_len * 32);
 
+      // Build numeric and string versions
       for (int i = static_cast<int>(vecval_len) - 1; i >= 0; --i) {
         const unsigned int avalue = read_val.value.vector[i].aval;
         const unsigned int bvalue = read_val.value.vector[i].bval;
 
-        // Only push back the first two 32-bit chunks
+        // Only keep up to 64 bits numerically (2 x 32-bit chunks)
         if (vecval_len - static_cast<unsigned int>(i) <= 2) {
           pair.second.uintValues.push_back(avalue);
         }
@@ -165,11 +177,15 @@ namespace test {
                   netStr.c_str(), pair.second.strValue.length());
     }
 
-    // Do NOT call vpi_remove_cb / vpi_free_object here for cbReadOnlySynch.
-    // These are one-shot callbacks; Questa unschedules them after firing.
+    // NOTE:
+    //  - cbReadOnlySynch is one-shot; Questa removes the callback after firing.
+    //  - Our scheduler::read_callback deletes SchedulerCallbackData.
+    //  - Here we just clear local book-keeping if needed; no vpi_remove_cb().
   }
 
-
+  // ============================================================
+  // Value getters
+  // ============================================================
   std::string TestBase::AwaitRead::getStr(const std::string& netStr,
                                           const unsigned int base) {
     constexpr char EMPTY_STRING[] = "";
@@ -199,11 +215,14 @@ namespace test {
         result->second.uintValues.pop_back();
         return single_value;
       }
-      unsigned int value_low = result->second.uintValues.back();
-      result->second.uintValues.pop_back();
-      unsigned int value_high = result->second.uintValues.back();
-      result->second.uintValues.pop_back();
-      return (static_cast<unsigned long long int>(value_high) << 32) + value_low;
+
+      if (result->second.uintValues.size() >= 2) {
+        unsigned int value_low = result->second.uintValues.back();
+        result->second.uintValues.pop_back();
+        unsigned int value_high = result->second.uintValues.back();
+        result->second.uintValues.pop_back();
+        return (static_cast<unsigned long long int>(value_high) << 32) | value_low;
+      }
     }
 
     std::printf("[WARNING]\tNo value for net: %s\n", netStr.c_str());

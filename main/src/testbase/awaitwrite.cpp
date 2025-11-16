@@ -20,7 +20,6 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-
 #include "testbase.hpp"
 #include <cstdio>
 
@@ -51,16 +50,19 @@ namespace test {
     auto callbackData = std::make_unique<scheduler::SchedulerCallbackData>();
     callbackData->handle = h;
 
-    callbackData->time.type = vpiSimTime;
-    callbackData->time.high = 0;
-    callbackData->time.low = delay;
+    // Time for the delay is only needed at registration;
+    // the simulator copies it, so stack lifetime is enough.
+    s_vpi_time time{};
+    time.type = vpiSimTime;
+    time.high = 0;
+    time.low = static_cast<PLI_UINT32>(delay);
 
     s_cb_data cb_data{};
     cb_data.reason = cbAfterDelay;
     cb_data.cb_rtn = &scheduler::write_callback;
     cb_data.obj = nullptr;
-    cb_data.time = &callbackData->time; // persistent
-    cb_data.value = nullptr; // allowed for cbAfterDelay
+    cb_data.time = &time; // stack object, read at registration
+    cb_data.value = nullptr; // not used for cbAfterDelay
 
     cb_data.user_data = reinterpret_cast<PLI_BYTE8*>(callbackData.get());
 
@@ -89,7 +91,7 @@ namespace test {
     std::printf("[DBG] AwaitWrite::await_suspend: vpi_register_cb OK, cb_handle=%p\n",
                 static_cast<void*>(cbH));
 
-    (void)callbackData.release();
+    (void)callbackData.release(); // ownership moves to scheduler::write_callback
     cb_handle = cbH;
   }
 
@@ -106,7 +108,7 @@ namespace test {
       const unsigned int vecval_len =
         (parent.getNetLength(key) + 31) / 32; // number of 32-bit chunks required
 
-      std::vector<s_vpi_vecval> write_vecval(vecval_len, {0, 0}); // Initialize all elements to {0, 0}
+      std::vector<s_vpi_vecval> write_vecval(vecval_len, {0, 0}); // Initialize all elements
 
       std::printf("[DBG] AwaitWrite::await_resume: net='%s', len=%u, flag=%d\n",
                   key.c_str(), parent.getNetLength(key), pair.second.flag);
@@ -117,7 +119,7 @@ namespace test {
 
         // Split the value into 32-bit chunks and store them in write_vecval
         for (unsigned int i = 0; i < vecval_len; ++i) {
-          write_vecval[i].aval = static_cast<PLI_INT32>(temp_value & 0xFFFFFFFF); // Extract 32 bits
+          write_vecval[i].aval = static_cast<PLI_INT32>(temp_value & 0xFFFFFFFFu); // Extract 32 bits
           write_vecval[i].bval = 0; // no bval used here
           temp_value >>= 32; // next chunk
         }
@@ -166,12 +168,10 @@ namespace test {
     grouped_writes.clear();
     grouped_writes.rehash(0);
 
-    // *** IMPORTANT ***:
-    // Do NOT call vpi_remove_cb or vpi_free_object here for cbAfterDelay.
-    // Questa removes one-shot callbacks itself when they fire.
-    // Leaving this empty avoids double-free / dangling-handle UB.
+    // cbAfterDelay is one-shot; simulator removes callback.
+    // scheduler::write_callback has already freed the user_data.
+    cb_handle = nullptr;
   }
-
 
   void TestBase::AwaitWrite::write(const std::string& netStr,
                                    const unsigned long long int value) {
