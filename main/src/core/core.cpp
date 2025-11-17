@@ -47,7 +47,10 @@ namespace core {
     dut->initNets();
 
     auto& testManager = test::TestManager::getInstance();
-    printf("[INFO] ABOUT TO START TEST MANAGER\n");
+#ifdef RAPIDVPI_DEBUG
+    std::printf("[DBG] Test manager about to start...\n");
+#endif
+
     for (const auto& [name, testFunctions] : testManager.getTests()) {
       for (const auto& testFunction : testFunctions) {
         auto handle = testFunction();

@@ -63,9 +63,11 @@ namespace test {
   void TestBase::AwaitRead::await_suspend(std::coroutine_handle<> h) {
     handle = h;
 
+#ifdef RAPIDVPI_DEBUG
     std::printf("[DBG] AwaitRead::await_suspend enter, delay=%llu, handle=%p\n",
                 static_cast<unsigned long long>(delay),
                 static_cast<void*>(handle.address()));
+#endif
 
     // Allocate callback data on heap (owned until callback fires)
     auto callbackData = std::make_unique<scheduler::SchedulerCallbackData>();
@@ -87,7 +89,9 @@ namespace test {
     cb_data.user_data =
       reinterpret_cast<PLI_BYTE8*>(callbackData.get());
 
+#ifdef RAPIDVPI_DEBUG
     std::printf("[DBG] AwaitRead::await_suspend: calling vpi_register_cb (cbReadOnlySynch)\n");
+#endif
     vpiHandle cbH = vpi_register_cb(&cb_data);
     if (cbH == nullptr) {
       std::printf("[WARNING]\tCannot register VPI Callback. TestBase::AwaitRead:: %s\n",
@@ -110,8 +114,10 @@ namespace test {
       return;
     }
 
+#ifdef RAPIDVPI_DEBUG
     std::printf("[DBG] AwaitRead::await_suspend: vpi_register_cb OK, cb_handle=%p\n",
                 static_cast<void*>(cbH));
+#endif
 
     // Hand ownership of callbackData to the simulator callback
     (void)callbackData.release();
@@ -119,7 +125,9 @@ namespace test {
   }
 
   void TestBase::AwaitRead::await_resume() noexcept {
+#ifdef RAPIDVPI_DEBUG
     std::printf("[DBG] AwaitRead::await_resume enter\n");
+#endif
 
     // sample current simulation time
     const vpiHandle cbH = nullptr;
@@ -129,15 +137,19 @@ namespace test {
     rdTime = (static_cast<unsigned long long>(tim.high) << 32) |
       static_cast<unsigned long long>(tim.low);
 
+#ifdef RAPIDVPI_DEBUG
     std::printf("[DBG] AwaitRead::await_resume: time=%llu, num_grouped_reads=%zu\n",
                 rdTime, grouped_reads.size());
+#endif
 
     s_vpi_value read_val{};
     read_val.format = vpiVectorVal;
 
     for (auto& pair : grouped_reads) {
       const std::string& netStr = pair.first;
+#ifdef RAPIDVPI_DEBUG
       std::printf("[DBG] AwaitRead::await_resume: reading net '%s'\n", netStr.c_str());
+#endif
 
       vpi_get_value(parent.getNetHandle(netStr), &read_val);
 
@@ -173,8 +185,10 @@ namespace test {
       }
 
       pair.second.strValue = std::move(final_strValue);
+#ifdef RAPIDVPI_DEBUG
       std::printf("[DBG] AwaitRead::await_resume: net '%s' strValue length=%zu\n",
                   netStr.c_str(), pair.second.strValue.length());
+#endif
     }
 
     // NOTE:

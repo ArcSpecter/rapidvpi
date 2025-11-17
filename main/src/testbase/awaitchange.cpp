@@ -41,17 +41,21 @@ namespace test {
   void TestBase::AwaitChange::await_suspend(std::coroutine_handle<> h) {
     handle = h;
 
+#ifdef RAPIDVPI_DEBUG
     std::printf("[DBG] AwaitChange::await_suspend enter, net='%s', targeted=%d, handle=%p\n",
                 net.c_str(),
                 static_cast<int>(change_is_targeted),
                 static_cast<void*>(handle.address()));
+#endif
 
     auto callbackData = std::make_unique<scheduler::SchedulerCallbackData>();
     callbackData->handle = h;
 
     vpiHandle net_handle = parent.getNetHandle(net);
+#ifdef RAPIDVPI_DEBUG
     std::printf("[DBG] AwaitChange::await_suspend net_handle=%p\n",
                 static_cast<void*>(net_handle));
+#endif
 
     if (net_handle == nullptr) {
       std::printf("[ERROR]\tAwaitChange::await_suspend: net '%s' has NULL handle, "
@@ -59,7 +63,6 @@ namespace test {
                   net.c_str());
       return;
     }
-
     // ---- Persistent time + value storage for Questa (MUST be non-null) ----
     callbackData->time.type = vpiSimTime;
     callbackData->time.high = 0;
@@ -79,18 +82,24 @@ namespace test {
       callbackData->cb_change_target_value = change_target_value;
       callbackData->cb_change_target_value_length = parent.getNetLength(net);
       cb_data.cb_rtn = &scheduler::change_callback_targeted;
+#ifdef RAPIDVPI_DEBUG
       std::printf("[DBG] AwaitChange::await_suspend: targeted change, target=%llu len=%u\n",
                   static_cast<unsigned long long>(change_target_value),
                   parent.getNetLength(net));
+#endif
     }
     else {
       cb_data.cb_rtn = &scheduler::change_callback;
+#ifdef RAPIDVPI_DEBUG
       std::printf("[DBG] AwaitChange::await_suspend: non-targeted change\n");
+#endif
     }
 
     cb_data.user_data = reinterpret_cast<PLI_BYTE8*>(callbackData.get());
 
+#ifdef RAPIDVPI_DEBUG
     std::printf("[DBG] AwaitChange::await_suspend: calling vpi_register_cb (cbValueChange)\n");
+#endif
     vpiHandle cbH = vpi_register_cb(&cb_data);
     if (cbH == nullptr) {
       std::printf("[WARNING]\tCannot register VPI Callback. TestBase::AwaitChange:: %s for net '%s'\n",
@@ -112,8 +121,10 @@ namespace test {
       return; // unique_ptr auto-frees callbackData
     }
 
+#ifdef RAPIDVPI_DEBUG
     std::printf("[DBG] AwaitChange::await_suspend: vpi_register_cb OK, cb_handle=%p\n",
                 static_cast<void*>(cbH));
+#endif
 
     callbackData->cb_handle = cbH;
     (void)callbackData.release(); // hand off lifetime to the callback
@@ -122,7 +133,9 @@ namespace test {
 
 
   void TestBase::AwaitChange::await_resume() noexcept {
+#ifdef RAPIDVPI_DEBUG
     std::printf("[DBG] AwaitChange::await_resume enter, net='%s'\n", net.c_str());
+#endif
 
     // Get current simulation time
     const vpiHandle cbH = nullptr;
@@ -132,8 +145,10 @@ namespace test {
     rdTime = (static_cast<unsigned long long>(tim.high) << 32) |
       static_cast<unsigned long long>(tim.low);
 
+#ifdef RAPIDVPI_DEBUG
     std::printf("[DBG] AwaitChange::await_resume: time=%llu\n",
                 static_cast<unsigned long long>(rdTime));
+#endif
 
     // Read the value being changed
     s_vpi_value read_val{};
@@ -141,8 +156,10 @@ namespace test {
     vpi_get_value(parent.getNetHandle(net), &read_val);
     const unsigned short int net_length = parent.getNetLength(net);
 
+#ifdef RAPIDVPI_DEBUG
     std::printf("[DBG] AwaitChange::await_resume: net_length=%u\n",
                 static_cast<unsigned int>(net_length));
+#endif
 
     // Clear the previous change value
     rd_change_value.strValue.clear();
@@ -182,8 +199,10 @@ namespace test {
 
     rd_change_value.strValue = std::move(final_strValue);
 
+#ifdef RAPIDVPI_DEBUG
     std::printf("[DBG] AwaitChange::await_resume: strValue length=%zu\n",
                 rd_change_value.strValue.size());
+#endif
 
     // scheduler::change_callback(_targeted) already removed the cb
     // and deleted user_data on the firing edge.

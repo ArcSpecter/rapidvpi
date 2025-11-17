@@ -43,9 +43,11 @@ namespace test {
   void TestBase::AwaitWrite::await_suspend(std::coroutine_handle<> h) {
     handle = h;
 
+#ifdef RAPIDVPI_DEBUG
     std::printf("[DBG] AwaitWrite::await_suspend enter, delay=%llu, handle=%p\n",
                 static_cast<unsigned long long>(delay),
                 static_cast<void*>(handle.address()));
+#endif
 
     auto callbackData = std::make_unique<scheduler::SchedulerCallbackData>();
     callbackData->handle = h;
@@ -66,7 +68,9 @@ namespace test {
 
     cb_data.user_data = reinterpret_cast<PLI_BYTE8*>(callbackData.get());
 
+#ifdef RAPIDVPI_DEBUG
     std::printf("[DBG] AwaitWrite::await_suspend: calling vpi_register_cb (cbAfterDelay)\n");
+#endif
     vpiHandle cbH = vpi_register_cb(&cb_data);
     if (cbH == nullptr) {
       std::printf("[WARNING]\tCannot register VPI Callback. TestBase::AwaitWrite:: %s\n",
@@ -88,16 +92,20 @@ namespace test {
       return;
     }
 
+#ifdef RAPIDVPI_DEBUG
     std::printf("[DBG] AwaitWrite::await_suspend: vpi_register_cb OK, cb_handle=%p\n",
                 static_cast<void*>(cbH));
+#endif
 
     (void)callbackData.release(); // ownership moves to scheduler::write_callback
     cb_handle = cbH;
   }
 
   void TestBase::AwaitWrite::await_resume() noexcept {
+#ifdef RAPIDVPI_DEBUG
     std::printf("[DBG] AwaitWrite::await_resume enter, grouped_writes=%zu\n",
                 grouped_writes.size());
+#endif
 
     s_vpi_value val{};
     val.format = vpiVectorVal;
@@ -110,8 +118,10 @@ namespace test {
 
       std::vector<s_vpi_vecval> write_vecval(vecval_len, {0, 0}); // Initialize all elements
 
+#ifdef RAPIDVPI_DEBUG
       std::printf("[DBG] AwaitWrite::await_resume: net='%s', len=%u, flag=%d\n",
                   key.c_str(), parent.getNetLength(key), pair.second.flag);
+#endif
 
       if (pair.second.strValue.empty()) {
         // Handle numeric write
@@ -159,8 +169,10 @@ namespace test {
 
       val.value.vector = write_vecval.data();
 
+#ifdef RAPIDVPI_DEBUG
       std::printf("[DBG] AwaitWrite::await_resume: calling vpi_put_value on '%s'\n",
                   key.c_str());
+#endif
       vpi_put_value(parent.getNetHandle(key), &val, nullptr, pair.second.flag);
     }
 

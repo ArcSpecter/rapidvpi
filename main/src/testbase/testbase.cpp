@@ -34,8 +34,10 @@ namespace test {
       std::printf("[ERROR]\tvpi_handle_by_name failed for '%s'\n", full_name.c_str());
     }
     else {
-      std::printf("[INFO]\tRegistered net '%s' (full: '%s'), handle=%p, len=%u\n",
+#ifdef RAPIDVPI_DEBUG
+      std::printf("[DBG]\tRegistered net '%s' (full: '%s'), handle=%p, len=%u\n",
                   key.c_str(), full_name.c_str(), static_cast<void*>(h), length);
+#endif
     }
 
     t_netmap_value entry{};
