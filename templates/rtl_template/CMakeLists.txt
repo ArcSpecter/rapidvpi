@@ -48,11 +48,11 @@ file(GLOB_RECURSE SRC_FILES "${SRC_DIR}/*.sv") # ALL source files within ./src
 #  ▀▀▀▀▀▀▀▀▀▀▀  ▀▀▀▀▀▀▀▀▀▀▀  ▀         ▀  ▀         ▀  ▀▀▀▀▀▀▀▀▀▀▀  ▀▀▀▀▀▀▀▀▀▀▀ 
 
 
-# Define output for compilation in the ./sim subfolder
+# Define output for compilation
 set(ICARUS_OUTPUT_DIR "${CMAKE_BINARY_DIR}/icarus")
 set(OUTPUT_VVP "${ICARUS_OUTPUT_DIR}/${PROJECT_NAME}.vvp")
 
-# Ensure the ./sim subfolder exists
+# Ensure the folder exists
 file(MAKE_DIRECTORY ${ICARUS_OUTPUT_DIR})
 
 # Define the command to compile the Verilog sources using iverilog
@@ -81,7 +81,7 @@ add_custom_target(
 # Create a custom target for running the simulation
 add_custom_target(
     sim_icarus_run
-    COMMAND vvp -M ${VPI_MODULE_DIR} -m ${VPI_MODULE_NAME} ${OUTPUT_VVP}
+    COMMAND vvp -M ${VPI_MODULE_DIR} -m ${VPI_MODULE_NAME} ${OUTPUT_VVP} -fst
     DEPENDS sim_icarus_compile
     COMMENT "Running simulation with vvp and VPI module"
 )
@@ -152,8 +152,8 @@ add_custom_target(
     COMMAND ${CMAKE_COMMAND} -E chdir ${QUESTA_SIM_DIR} vlog -f ${VLOG_OPTIONS} -work ${ADDER_LIB} ${SRC_DIR}/clocked_adder.sv
 
     # Generate makefile for incremental builds (needs shell for '>')
-    COMMAND bash -c "cd ${QUESTA_SIM_DIR} && vmake ${WORK_LIB} > work.mak"
-    COMMAND bash -c "cd ${QUESTA_SIM_DIR} && vmake ${ADDER_LIB} > adder.mak"
+    COMMAND bash -c "cd ${QUESTA_SIM_DIR} && vmake ${WORK_LIB} > ${WORK_LIB}.mak"
+    COMMAND bash -c "cd ${QUESTA_SIM_DIR} && vmake ${ADDER_LIB} > ${ADDER_LIB}.mak"
 
     COMMENT "Initial QuestaSim compilation and vmake makefile generation (fresh)"
     VERBATIM
@@ -164,11 +164,11 @@ add_custom_target(
     sim_questa_compile ALL
     COMMAND ${CMAKE_COMMAND} -E remove -f ${QUESTA_SIM_DIR}/.stamp
     COMMAND ${CMAKE_COMMAND} -E echo "Rebuilding QuestaSim work library via make ..."
-    COMMAND ${CMAKE_COMMAND} -E chdir ${QUESTA_SIM_DIR} make -f work.mak
-    COMMAND ${CMAKE_COMMAND} -E chdir ${QUESTA_SIM_DIR} make -f adder.mak
+    COMMAND ${CMAKE_COMMAND} -E chdir ${QUESTA_SIM_DIR} make -f ${WORK_LIB}.mak
+    COMMAND ${CMAKE_COMMAND} -E chdir ${QUESTA_SIM_DIR} make -f ${ADDER_LIB}.mak
     COMMAND ${CMAKE_COMMAND} -E echo "QuestaSim make finished"
     COMMAND ${CMAKE_COMMAND} -E touch ${QUESTA_SIM_DIR}/.stamp
-    COMMENT "Compiling all units into work library (incremental via vmake)"
+    COMMENT "Compiling all units into libraries (incremental via vmake)"
 )
 
 # 3) Batch (console) run
