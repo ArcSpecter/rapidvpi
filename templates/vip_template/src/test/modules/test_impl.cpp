@@ -44,16 +44,23 @@ namespace test {
   }
 
   TestImpl::RunTask TestImpl::run3() {
-    auto awchange = test.getCoChange("c"); // Use the `test` reference
-    co_await awchange;
-    co_await awchange;
+    // Optional: consume the first boring change (X->0, reset, whatever)
+    {
+      auto first = test.getCoChange("c");
+      co_await first;
+    }
 
-    printf("Awaited Numeric value for the 'c' is : %llx\n", awchange.getNum());
-    printf("Awaited Hex String value for the 'c' is : %s\n", awchange.getHexStr().c_str());
-    printf("Awaited Bin String value for the 'c' is : %s\n", awchange.getBinStr().c_str());
+    // Now wait for the next change with a *fresh* awaiter
+    auto second = test.getCoChange("c");
+    co_await second;
+
+    printf("Awaited Numeric value for the 'c' is : %llx\n", second.getNum());
+    printf("Awaited Hex String value for the 'c' is : %s\n", second.getHexStr().c_str());
+    printf("Awaited Bin String value for the 'c' is : %s\n", second.getBinStr().c_str());
 
     co_return;
   }
+
 
   TestImpl::RunTask TestImpl::run4() {
     co_await test.getCoWrite(7.25);
