@@ -32,21 +32,33 @@ set(VPI_MODULE_NAME "${VPI_MODULE_DIR}/libvip_template.so")
 
 # Define source directory and gather all Verilog & SystemVerilog source files
 set(SRC_DIR "${CMAKE_SOURCE_DIR}/src")
-file(GLOB_RECURSE SRC_FILES "${SRC_DIR}/*.v" "${SRC_DIR}/*.sv")
+file(GLOB_RECURSE SRC_FILES "${SRC_DIR}/*.sv") # ALL source files within ./src
+
+
+#  ▄▄▄▄▄▄▄▄▄▄▄  ▄▄▄▄▄▄▄▄▄▄▄  ▄▄▄▄▄▄▄▄▄▄▄  ▄▄▄▄▄▄▄▄▄▄▄  ▄         ▄  ▄▄▄▄▄▄▄▄▄▄▄ 
+# ▐░░░░░░░░░░░▌▐░░░░░░░░░░░▌▐░░░░░░░░░░░▌▐░░░░░░░░░░░▌▐░▌       ▐░▌▐░░░░░░░░░░░▌
+#  ▀▀▀▀█░█▀▀▀▀ ▐░█▀▀▀▀▀▀▀▀▀ ▐░█▀▀▀▀▀▀▀█░▌▐░█▀▀▀▀▀▀▀█░▌▐░▌       ▐░▌▐░█▀▀▀▀▀▀▀▀▀ 
+#      ▐░▌     ▐░▌          ▐░▌       ▐░▌▐░▌       ▐░▌▐░▌       ▐░▌▐░▌          
+#      ▐░▌     ▐░▌          ▐░█▄▄▄▄▄▄▄█░▌▐░█▄▄▄▄▄▄▄█░▌▐░▌       ▐░▌▐░█▄▄▄▄▄▄▄▄▄ 
+#      ▐░▌     ▐░▌          ▐░░░░░░░░░░░▌▐░░░░░░░░░░░▌▐░▌       ▐░▌▐░░░░░░░░░░░▌
+#      ▐░▌     ▐░▌          ▐░█▀▀▀▀▀▀▀█░▌▐░█▀▀▀▀█░█▀▀ ▐░▌       ▐░▌ ▀▀▀▀▀▀▀▀▀█░▌
+#      ▐░▌     ▐░▌          ▐░▌       ▐░▌▐░▌     ▐░▌  ▐░▌       ▐░▌          ▐░▌
+#  ▄▄▄▄█░█▄▄▄▄ ▐░█▄▄▄▄▄▄▄▄▄ ▐░▌       ▐░▌▐░▌      ▐░▌ ▐░█▄▄▄▄▄▄▄█░▌ ▄▄▄▄▄▄▄▄▄█░▌
+# ▐░░░░░░░░░░░▌▐░░░░░░░░░░░▌▐░▌       ▐░▌▐░▌       ▐░▌▐░░░░░░░░░░░▌▐░░░░░░░░░░░▌
+#  ▀▀▀▀▀▀▀▀▀▀▀  ▀▀▀▀▀▀▀▀▀▀▀  ▀         ▀  ▀         ▀  ▀▀▀▀▀▀▀▀▀▀▀  ▀▀▀▀▀▀▀▀▀▀▀ 
+
 
 # Define output for compilation in the ./sim subfolder
-set(SIM_OUTPUT_DIR "${CMAKE_BINARY_DIR}/sim")
-set(OUTPUT_VVP "${SIM_OUTPUT_DIR}/${PROJECT_NAME}.vvp")
+set(ICARUS_OUTPUT_DIR "${CMAKE_BINARY_DIR}/icarus")
+set(OUTPUT_VVP "${ICARUS_OUTPUT_DIR}/${PROJECT_NAME}.vvp")
 
 # Ensure the ./sim subfolder exists
-file(MAKE_DIRECTORY ${SIM_OUTPUT_DIR})
-
-
+file(MAKE_DIRECTORY ${ICARUS_OUTPUT_DIR})
 
 # Define the command to compile the Verilog sources using iverilog
 add_custom_command(
     OUTPUT ${OUTPUT_VVP}
-    COMMAND ${CMAKE_COMMAND} -E make_directory ${SIM_OUTPUT_DIR}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${ICARUS_OUTPUT_DIR}
     COMMAND iverilog
     -g 2012
     -o ${OUTPUT_VVP}
@@ -61,31 +73,31 @@ add_custom_command(
 
 # Create a custom target to build the VVP file
 add_custom_target(
-    sim_compile ALL
+    sim_icarus_compile ALL
     DEPENDS ${OUTPUT_VVP}
-    COMMENT "Building Verilog simulation files in ./sim"
+    COMMENT "Building Verilog simulation files in ${ICARUS_OUTPUT_DIR}"
 )
 
 # Create a custom target for running the simulation
 add_custom_target(
-    sim_run
+    sim_icarus_run
     COMMAND vvp -M ${VPI_MODULE_DIR} -m ${VPI_MODULE_NAME} ${OUTPUT_VVP}
-    DEPENDS sim_compile
+    DEPENDS sim_icarus_compile
     COMMENT "Running simulation with vvp and VPI module"
 )
 
 # Create a custom target for launching GTKWave
 add_custom_target(
     sim_wave
-    COMMAND setsid gtkwave ${SIM_OUTPUT_DIR}/test.vcd > /dev/null 2>&1 &
+    COMMAND setsid gtkwave ${ICARUS_OUTPUT_DIR}/test.vcd > /dev/null 2>&1 &
     COMMENT "Launching GTKWave to view simulation results (detached)"
 )
 
 # Custom target for cleaning the ./sim subfolder
 add_custom_target(
     clean_sim
-    COMMAND ${CMAKE_COMMAND} -E rm -rf ${SIM_OUTPUT_DIR}
-    COMMENT "Removing the ./sim subfolder (${SIM_OUTPUT_DIR})"
+    COMMAND ${CMAKE_COMMAND} -E rm -rf ${ICARUS_OUTPUT_DIR}
+    COMMENT "Removing the ./sim subfolder (${ICARUS_OUTPUT_DIR})"
 )
 
 
