@@ -44,11 +44,8 @@ namespace test {
   }
 
   TestImpl::RunTask TestImpl::run3() {
-    // Optional: consume the first boring change (X->0, reset, whatever)
-    {
-      auto first = test.getCoChange("c");
-      co_await first;
-    }
+    auto awchange = test.getCoChange("rst", 1); // Wait for reset to settle
+    co_await awchange;
 
     // Now wait for the next change with a *fresh* awaiter
     auto second = test.getCoChange("c");
