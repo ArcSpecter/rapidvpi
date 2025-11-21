@@ -39,14 +39,8 @@ The motivation for the development of this library was the ability to use all th
 ninja, gcc >14.2, cmake >3.1, iverilog (tested with), gtkwave (optional)
 
 ### Installation (Linux)
-The following environment variables must be set:
-VPI_LIB_DIR - pointing to the library location for VPI (typically where your simulator installed)
-VPI_INCLUDE_DIR - pointing to the location of vpi_user.h (within installation folder of your simulator as well)
-
-In the current case since Iverilog was used, those locations were:
-VPI_LIB_DIR=/path/to/iverilog/libveriuser
-VPI_INCLUDE_DIR=/path/to/iverilog
-
+The following environment variable must be set:
+VPI_INCLUDE_DIR - pointing to the location of vpi_user.h (For example, ~/eda/quartus25_1/questa_fse/include/ where QuestaSim installed)
 
 Get the repository, compile and install:
 ```bash
@@ -91,13 +85,8 @@ Above will install the library and its .so files and necessary headers in approp
 ### Installation (Windows)
 In order to be able to use this API on Windows (currently tested Win11), it is assumed that user installs MSYS2 system in his windows environment, and inside that environment he installs all the same prerequisite packages like iverilog, cmake, ninja. Obviously, that he needs to compile from source and build/install the iverilog inside MSYS environment as well.
 
-Assuming that above is done, the following environment variables must be set:
-VPI_LIB_DIR - pointing to the library location for VPI (typically where your simulator installed)
-VPI_INCLUDE_DIR - pointing to the location of vpi_user.h (within installation folder of your simulator as well)
-
-In the current case since Iverilog was used, those locations were:
-VPI_LIB_DIR=/path/to/iverilog/libveriuser
-VPI_INCLUDE_DIR=/path/to/iverilog
+Assuming that above is done, the following environment variable must be set:
+VPI_INCLUDE_DIR - pointing to the location of vpi_user.h (For example, ~/eda/quartus25_1/questa_fse/include/ where QuestaSim installed)
 
 After that we just have first to build and install core RapidVPI components, go into the `main_win` folder and:
 ```
