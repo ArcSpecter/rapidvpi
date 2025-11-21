@@ -23,11 +23,8 @@
 # Description: Main CMakeLists.txt file for the RapidVPI library. Includes build
 # and installation steps. The following environment variables must be set for the
 # system:
-# VPI_LIB_DIR: pointing to the library location for VPI library (since initially
-# RapidVPI is designed to work with iverilog that path would be "path/to/iverilog/libveriuser")
-# VPI_INCLUDE_DIR: pointing to the location where the "vpi_user.h" file is located (again for
+# VPI_INCLUDE_DIR: pointing to the location where the "vpi_user.h" file is located (i.e. for
 # the case of iverilog it is "path/to/iverilog")
-
 
 # Main CMakeLists.txt for the library
 cmake_minimum_required(VERSION 3.5)
@@ -35,21 +32,27 @@ cmake_minimum_required(VERSION 3.5)
 # Project configuration
 project(rapidvpi VERSION 0.0.1)
 
+# ---------------------------------------------------------------------------
+# Debug prints control for RapidVPI
+# ---------------------------------------------------------------------------
+option(RAPIDVPI_ENABLE_DEBUG "Enable RapidVPI internal debug prints" OFF)
+
+if (RAPIDVPI_ENABLE_DEBUG)
+    add_definitions(-DRAPIDVPI_DEBUG)
+endif ()
+# ---------------------------------------------------------------------------
+
 # Include the CMake package config helpers
 include(CMakePackageConfigHelpers)
 
 # Set project variables
-set(vpi_lib_dir $ENV{VPI_LIB_DIR} CACHE PATH "Path to the VPI library directory")
+# NOTE: For Questa, you only need VPI_INCLUDE_DIR
 set(vpi_include_dir $ENV{VPI_INCLUDE_DIR} CACHE PATH "Path to the VPI include directory")
 
 # Ensure the variable is set
 if (NOT vpi_include_dir)
-  message(FATAL_ERROR "VPI_INCLUDE_DIR environment variable must be set or provided manually.")
-endif()
-
-if (NOT vpi_lib_dir)
-  message(FATAL_ERROR "VPI_LIB_DIR environment variable must be set or provided manually.")
-endif()
+    message(FATAL_ERROR "VPI_INCLUDE_DIR environment variable must be set or provided manually.")
+endif ()
 
 # Compiler flags
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIC -Wall -I${vpi_include_dir}")
@@ -64,26 +67,24 @@ add_subdirectory(src/testmanager)
 # Option to build shared library (.so) for internal testing (not installed)
 option(BUILD_SHARED_LIBRARY "Build the shared library (.so) for internal testing" ON)
 
-if(BUILD_SHARED_LIBRARY)
-  # Build the shared library for internal use only
-  add_library(rapidvpi.vpi SHARED src/entry.cpp)
+if (BUILD_SHARED_LIBRARY)
+    # Build the shared library for internal use only
+    add_library(rapidvpi.vpi SHARED src/entry.cpp)
 
-  # Find the VPI library
-  find_library(VPI_LIBRARY_NAME vpi ${vpi_lib_dir})
-  if(NOT VPI_LIBRARY_NAME)
-    message(FATAL_ERROR "VPI library not found")
-  endif()
+    # Include directories for internal components and VPI
+    target_include_directories(rapidvpi.vpi PRIVATE
+            ${vpi_include_dir}  # For VPI headers
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/core  # Core headers
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/scheduler  # Scheduler headers
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/testbase  # Testbase headers
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/testmanager  # Testmanager headers
+    )
 
-  # Include directories for internal components and VPI
-  target_include_directories(rapidvpi.vpi PRIVATE
-          ${vpi_include_dir}  # For VPI headers
-          ${CMAKE_CURRENT_SOURCE_DIR}/src/core  # Core headers
-          ${CMAKE_CURRENT_SOURCE_DIR}/src/scheduler  # Scheduler headers
-          ${CMAKE_CURRENT_SOURCE_DIR}/src/testbase  # Testbase headers
-          ${CMAKE_CURRENT_SOURCE_DIR}/src/testmanager  # Testmanager headers
-  )
-  target_link_libraries(rapidvpi.vpi PRIVATE vpi core testbase scheduler testmanager)
-endif()
+    # IMPORTANT for Questa:
+    #   Do NOT link any external vpi/libveriuser library.
+    #   The simulator provides VPI symbols internally.
+    target_link_libraries(rapidvpi.vpi PRIVATE core testbase scheduler testmanager)
+endif ()
 
 # Install public headers and source files under rapidvpi folder to keep them organized
 install(DIRECTORY src/core/ DESTINATION include/rapidvpi/core FILES_MATCHING PATTERN "*.hpp")

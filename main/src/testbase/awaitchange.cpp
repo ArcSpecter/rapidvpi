@@ -21,9 +21,9 @@
 // SOFTWARE.
 
 #include "testbase.hpp"
+#include <cstdio>
 
 namespace test {
-
   template <TimeUnit T>
   double TestBase::AwaitChange::getTime() const {
     return static_cast<double>(rdTime) * parent.sim_time_unit / TimeUnitConversion<T>::factor;
@@ -38,106 +38,157 @@ namespace test {
   template double TestBase::AwaitChange::getTime<us>() const;
   template double TestBase::AwaitChange::getTime<ms>() const;
 
-  /**
-   * This method suspends the current coroutine by registering a callback that will resume
-   * it when a value change occurs on a monitored net in a simulation environment.
-   *
-   * @param h The coroutine handle that needs to be resumed upon the value change event.
-   */
   void TestBase::AwaitChange::await_suspend(std::coroutine_handle<> h) {
     handle = h;
 
-    // Allocate and prepare the callback data
+#ifdef RAPIDVPI_DEBUG
+    std::printf("[DBG] AwaitChange::await_suspend enter, net='%s', targeted=%d, handle=%p\n",
+                net.c_str(),
+                static_cast<int>(change_is_targeted),
+                static_cast<void*>(handle.address()));
+#endif
+
     auto callbackData = std::make_unique<scheduler::SchedulerCallbackData>();
-    callbackData->handle = h; // Store the coroutine handle
+    callbackData->handle = h;
 
-    // register scheduler callback here
-    s_cb_data cb_data;
-    s_vpi_time tim;
+    vpiHandle net_handle = parent.getNetHandle(net);
+#ifdef RAPIDVPI_DEBUG
+    std::printf("[DBG] AwaitChange::await_suspend net_handle=%p\n",
+                static_cast<void*>(net_handle));
+#endif
 
-    tim.high = 0;
-    tim.low = 0;
-    tim.type = vpiSimTime;
+    if (net_handle == nullptr) {
+      std::printf("[ERROR]\tAwaitChange::await_suspend: net '%s' has NULL handle, "
+                  "cannot register cbValueChange.\n",
+                  net.c_str());
+      return;
+    }
+    // ---- Persistent time + value storage for Questa (MUST be non-null) ----
+    callbackData->time.type = vpiSimTime;
+    callbackData->time.high = 0;
+    callbackData->time.low = 0;
 
+    callbackData->vpi_value.format = vpiIntVal;
+    callbackData->vpi_value.value.integer = 0;
+
+    // Prepare cb_data
+    s_cb_data cb_data{};
     cb_data.reason = cbValueChange;
-    if (change_is_targeted == true) {
-      // we looking for change to specific value
+    cb_data.obj = net_handle;
+    cb_data.time = &callbackData->time; // <- non-null now
+    cb_data.value = &callbackData->vpi_value; // <- non-null (from previous fix)
+
+    if (change_is_targeted) {
       callbackData->cb_change_target_value = change_target_value;
       callbackData->cb_change_target_value_length = parent.getNetLength(net);
       cb_data.cb_rtn = &scheduler::change_callback_targeted;
+#ifdef RAPIDVPI_DEBUG
+      std::printf("[DBG] AwaitChange::await_suspend: targeted change, target=%llu len=%u\n",
+                  static_cast<unsigned long long>(change_target_value),
+                  parent.getNetLength(net));
+#endif
     }
     else {
       cb_data.cb_rtn = &scheduler::change_callback;
+#ifdef RAPIDVPI_DEBUG
+      std::printf("[DBG] AwaitChange::await_suspend: non-targeted change\n");
+#endif
     }
-    cb_data.obj = parent.getNetHandle(net);
-    cb_data.time = &tim;
-    cb_data.value = nullptr;
-    cb_data.user_data = reinterpret_cast<PLI_BYTE8*>(callbackData.release()); // Pass ownership
 
+    cb_data.user_data = reinterpret_cast<PLI_BYTE8*>(callbackData.get());
 
-    if (vpiHandle cbH; (cbH = vpi_register_cb(&cb_data)) == nullptr)
-      printf("[WARNING]\tCannot register VPI Callback: %s\n", __FUNCTION__);
-    else {
-      this->cb_handle = cbH; // save handle so that we can unregister inside await_resume()
+#ifdef RAPIDVPI_DEBUG
+    std::printf("[DBG] AwaitChange::await_suspend: calling vpi_register_cb (cbValueChange)\n");
+#endif
+    vpiHandle cbH = vpi_register_cb(&cb_data);
+    if (cbH == nullptr) {
+      std::printf("[WARNING]\tCannot register VPI Callback. TestBase::AwaitChange:: %s for net '%s'\n",
+                  __FUNCTION__, net.c_str());
+
+      s_vpi_error_info err{};
+      if (vpi_chk_error(&err)) {
+        std::printf("[VPI ERROR]\tcode=%s msg=%s file=%s line=%d\n",
+                    err.code ? err.code : "(null)",
+                    err.message ? err.message : "(null)",
+                    err.file ? err.file : "(null)",
+                    static_cast<int>(err.line));
+      }
+      else {
+        std::printf("[VPI ERROR]\tNo additional VPI error info.\n");
+      }
+
+      cb_handle = nullptr;
+      return; // unique_ptr auto-frees callbackData
     }
+
+#ifdef RAPIDVPI_DEBUG
+    std::printf("[DBG] AwaitChange::await_suspend: vpi_register_cb OK, cb_handle=%p\n",
+                static_cast<void*>(cbH));
+#endif
+
+    callbackData->cb_handle = cbH;
+    (void)callbackData.release(); // hand off lifetime to the callback
+    cb_handle = cbH;
   }
 
-  /**
-   * Resume the suspended coroutine and process the value change on a monitored net.
-   *
-   * This method gets the new value of the monitored net, processes it to update
-   * the internal `rd_change_value` with the respective string and numeric representation
-   * of the net's vector value, and then cleans up by unregistering and freeing the
-   * callback object used for monitoring the value change.
-   */
+
   void TestBase::AwaitChange::await_resume() noexcept {
-    // These are for getting a current time reading
+#ifdef RAPIDVPI_DEBUG
+    std::printf("[DBG] AwaitChange::await_resume enter, net='%s'\n", net.c_str());
+#endif
+
+    // Get current simulation time
     const vpiHandle cbH = nullptr;
-    s_vpi_time tim;
+    s_vpi_time tim{};
     tim.type = vpiSimTime;
     vpi_get_time(cbH, &tim);
-    rdTime = (static_cast<unsigned long long>(tim.high) << 32) | static_cast<unsigned long long>(tim.low);
+    rdTime = (static_cast<unsigned long long>(tim.high) << 32) |
+      static_cast<unsigned long long>(tim.low);
+
+#ifdef RAPIDVPI_DEBUG
+    std::printf("[DBG] AwaitChange::await_resume: time=%llu\n",
+                static_cast<unsigned long long>(rdTime));
+#endif
 
     // Read the value being changed
-    s_vpi_value read_val;
+    s_vpi_value read_val{};
     read_val.format = vpiVectorVal;
     vpi_get_value(parent.getNetHandle(net), &read_val);
     const unsigned short int net_length = parent.getNetLength(net);
+
+#ifdef RAPIDVPI_DEBUG
+    std::printf("[DBG] AwaitChange::await_resume: net_length=%u\n",
+                static_cast<unsigned int>(net_length));
+#endif
 
     // Clear the previous change value
     rd_change_value.strValue.clear();
     rd_change_value.uintValues.clear();
 
-    const unsigned int vecval_len = (net_length + 31) / 32; // number of 32-bit chunks required
+    const unsigned int vecval_len =
+      (static_cast<unsigned int>(net_length) + 31) / 32; // number of 32-bit chunks required
 
-    // Allocate enough space for the resulting string
     std::string final_strValue;
     final_strValue.reserve(vecval_len * 32);
 
-    // Iterate from least significant chunk to most significant chunk for uintValues
-    // But for string value, iterate from most significant to least significant for correct bit order.
-    for (int i = 0; i < static_cast<int>(vecval_len); ++i) {
-      // Append the numeric values correctly
-      rd_change_value.uintValues.push_back(read_val.value.vector[i].aval);
+    // numeric values: push in natural order (LS chunk to MS chunk)
+    for (unsigned int i = 0; i < vecval_len; ++i) {
+      rd_change_value.uintValues.push_back(
+        static_cast<unsigned int>(read_val.value.vector[i].aval));
     }
 
+    // string value: process from MS chunk down to LS chunk
     for (int i = static_cast<int>(vecval_len) - 1; i >= 0; --i) {
       const unsigned int avalue = read_val.value.vector[i].aval;
       const unsigned int bvalue = read_val.value.vector[i].bval;
 
-      // Process bits from MSB to LSB for each 32-bit word
       for (int j = 31; j >= 0; --j) {
         char bit_representation;
         const bool a_bit = (avalue & (1u << j)) != 0;
         const bool b_bit = (bvalue & (1u << j)) != 0;
 
         if (b_bit) {
-          if (a_bit) {
-            bit_representation = 'x';
-          }
-          else {
-            bit_representation = 'z';
-          }
+          bit_representation = a_bit ? 'x' : 'z';
         }
         else {
           bit_representation = a_bit ? '1' : '0';
@@ -146,64 +197,40 @@ namespace test {
       }
     }
 
-    // Assign the properly formatted string value
     rd_change_value.strValue = std::move(final_strValue);
 
-    // Unregister the callback
-    vpi_remove_cb(cb_handle);
+#ifdef RAPIDVPI_DEBUG
+    std::printf("[DBG] AwaitChange::await_resume: strValue length=%zu\n",
+                rd_change_value.strValue.size());
+#endif
 
-    // Free the callback object
-    vpi_free_object(cb_handle);
-
-    // Clear the stored handle
+    // scheduler::change_callback(_targeted) already removed the cb
+    // and deleted user_data on the firing edge.
     cb_handle = nullptr;
   }
 
-  /**
-   * Retrieves a single 64-bit unsigned integer value from the stored vector of 32-bit values.
-   *
-   * If there is only one 32-bit value available, it will be returned as a 32-bit value.
-   * If there are at least two 32-bit values available, they will be combined into a 64-bit value,
-   * with the most significant word first.
-   * If no values are available, a warning will be printed and zero will be returned.
-   *
-   * @return A 64-bit unsigned integer value formed from the available 32-bit values.
-   */
   unsigned long long int TestBase::AwaitChange::getNum() {
     if (const size_t value_count = rd_change_value.uintValues.size(); value_count == 1) {
-      // Only one 32-bit value available
       const unsigned int single_value = rd_change_value.uintValues.back();
       rd_change_value.uintValues.pop_back();
       return single_value;
     }
 
     if (rd_change_value.uintValues.size() >= 2) {
-      // Get MS word first
       const unsigned int value_high = rd_change_value.uintValues.back();
       rd_change_value.uintValues.pop_back();
-      // Get LS word next
       const unsigned int value_low = rd_change_value.uintValues.back();
       rd_change_value.uintValues.pop_back();
 
-      const unsigned long long result = (static_cast<unsigned long long int>(value_high) << 32) | value_low;
+      const unsigned long long result =
+        (static_cast<unsigned long long int>(value_high) << 32) | value_low;
       return result;
     }
 
-    printf("[WARNING]\tNo value available\n");
+    std::printf("[WARNING]\tNo value available\n");
     return 0;
   }
 
-  /**
-   * Retrieves the string representation of the monitored net's value.
-   *
-   * This method checks if the string value of the monitored net is not empty. If the
-   * `base` parameter is 16, the string value is converted to hexadecimal representation
-   * and returned. Otherwise, the binary string value is returned. If the string value
-   * is empty, an empty string is returned.
-   *
-   * @param base The numerical base (e.g., 16 for hexadecimal) used to format the return value.
-   * @return The string representation of the net's value, formatted according to the given base.
-   */
   std::string TestBase::AwaitChange::getStr(const unsigned int base) {
     constexpr char EMPTY_STRING[] = "";
 
@@ -217,14 +244,11 @@ namespace test {
     return EMPTY_STRING;
   }
 
-  // for bin string
   std::string TestBase::AwaitChange::getBinStr() {
     return getStr(2);
   }
 
-  // for hex string
   std::string TestBase::AwaitChange::getHexStr() {
     return getStr(16);
   }
-
-}
+} // namespace test

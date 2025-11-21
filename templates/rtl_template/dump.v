@@ -27,7 +27,7 @@ module dump ();
 
 
   initial begin
-    $dumpfile("./sim/test.vcd");
+    $dumpfile("./icarus/test.vcd");
     $dumpvars(0, dut_top);
   end
 endmodule
