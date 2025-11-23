@@ -29,6 +29,21 @@ namespace test {
     test.registerTest("run4", [this]() { return this->run4().handle; });
   }
 
+  // This is needed so that it can print in transcript window of QuestaSim on windows too
+inline void rvpi_log(const char* fmt, ...) {
+  char buf[1024];
+
+  va_list args;
+  va_start(args, fmt);
+  vsnprintf(buf, sizeof(buf), fmt, args);
+  va_end(args);
+
+  // VPI's vpi_printf takes PLI_BYTE8* (aka char*), but we have a const literal.
+  // Safe in practice because vpi_printf won't modify the format string.
+  vpi_printf(const_cast<PLI_BYTE8*>("%s\n"), buf);
+}
+
+
   // User coroutines
   TestImpl2::RunUserTask TestImpl::clock(const int n, const int edge) const {
     for (int i = 0; i < n; ++i) {
@@ -44,13 +59,16 @@ namespace test {
   }
 
   TestImpl::RunTask TestImpl::run3() {
-    auto awchange = test.getCoChange("c"); // Use the `test` reference
-    co_await awchange;
+    auto awchange = test.getCoChange("rst", 1); // Wait for reset to settle
     co_await awchange;
 
-    printf("Awaited Numeric value for the 'c' is : %llx\n", awchange.getNum());
-    printf("Awaited Hex String value for the 'c' is : %s\n", awchange.getHexStr().c_str());
-    printf("Awaited Bin String value for the 'c' is : %s\n", awchange.getBinStr().c_str());
+    // Now wait for the next change with a *fresh* awaiter
+    auto second = test.getCoChange("c");
+    co_await second;
+
+    rvpi_log("Awaited Numeric value for the 'c' is : %llx\n", second.getNum());
+    rvpi_log("Awaited Hex String value for the 'c' is : %s\n", second.getHexStr().c_str());
+    rvpi_log("Awaited Bin String value for the 'c' is : %s\n", second.getBinStr().c_str());
 
     co_return;
   }
@@ -61,7 +79,7 @@ namespace test {
     auto awchange = test.getCoChange("clk", 1); // get next clk rising change
     co_await awchange;
     double aw_change_time = awchange.getTime<ns>();
-    printf("Read time at clk=1 change is: %f ns\n", aw_change_time);
+    rvpi_log("Read time at clk=1 change is: %f ns\n", aw_change_time);
 
     auto awaiter2 = test.getCoWrite(0); // write at that clk edge
     awaiter2.write("b", 0xc000000000);
@@ -73,11 +91,11 @@ namespace test {
     co_await awRd;
     std::string value_hex = awRd.getHexStr("c"); // Expecting hex output
     std::string value_bin = awRd.getBinStr("c"); // Binary output
-    printf("numeric value of 'c' is: %llx\n", awRd.getNum("c"));
-    printf("hex string is: %s\n", value_hex.c_str());
-    printf("bin string is: %s\n", value_bin.c_str());
+    rvpi_log("numeric value of 'c' is: %llx\n", awRd.getNum("c"));
+    rvpi_log("hex string is: %s\n", value_hex.c_str());
+    rvpi_log("bin string is: %s\n", value_bin.c_str());
     double read_time = awRd.getTime<ns>();
-    printf("Read time is: %f ns\n", read_time);
+    rvpi_log("Read time is: %f ns\n", read_time);
 
     // Here goes example of user coroutines
     co_await delay_ns(3.3);
@@ -86,7 +104,7 @@ namespace test {
     auto tread = test.getCoRead(0);
     co_await tread;
     double tread_val = tread.getTime<ns>();
-    printf("Read time after delay: %f ns\n", tread_val);
+    rvpi_log("Read time after delay: %f ns\n", tread_val);
 
     co_await clock(); // Wait just next rising edge
 
@@ -94,11 +112,11 @@ namespace test {
     auto tread2 = test.getCoRead(0);
     co_await tread2;
     double tread_val2 = tread2.getTime<ns>();
-    printf("Read time after next clock: %f ns\n", tread_val2);
+    rvpi_log("Read time after next clock: %f ns\n", tread_val2);
 
     // Example of accessing test function in upper Test class
     test.some_func();
-    printf("value received during  test creation: %d\n", x);
+    rvpi_log("value received during  test creation: %d\n", x);
 
 
     co_return;

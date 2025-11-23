@@ -47,6 +47,9 @@ namespace core {
     dut->initNets();
 
     auto& testManager = test::TestManager::getInstance();
+#ifdef RAPIDVPI_DEBUG
+    std::printf("[DBG] Test manager about to start...\n");
+#endif
 
     for (const auto& [name, testFunctions] : testManager.getTests()) {
       for (const auto& testFunction : testFunctions) {
@@ -62,7 +65,7 @@ namespace core {
     // Invoke the user-defined factory registration function
     userRegisterFactory();
 
-    s_cb_data cb_data;
+    s_cb_data cb_data{};
     cb_data.reason = cbStartOfSimulation;
     cb_data.cb_rtn = &sim_init;
     cb_data.obj = nullptr;

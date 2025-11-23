@@ -19,118 +19,259 @@
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
-
 #include "scheduler.hpp"
+#include <cstdio>
+#include <cstdint>
 
 namespace scheduler {
-    PLI_INT32 write_callback(p_cb_data data) {
-        // Retrieve the user data passed to the callback
-        auto* callbackData = reinterpret_cast<SchedulerCallbackData*>(data->user_data);
+  // cbAfterDelay -> used by AwaitWrite
+  PLI_INT32 write_callback(p_cb_data data) {
+#ifdef RAPIDVPI_DEBUG
+    std::printf("[DBG] write_callback entered: data=%p reason=%d obj=%p\n",
+                static_cast<void*>(data),
+                data ? data->reason : -1,
+                data ? static_cast<void*>(data->obj) : nullptr);
+#endif
 
-        // Resume the coroutine
-        callbackData->handle.resume();
+    auto* callbackData =
+      data
+        ? reinterpret_cast<SchedulerCallbackData*>(data->user_data)
+        : nullptr;
 
-        // Clean up the allocated memory
-        delete callbackData;
+#ifdef RAPIDVPI_DEBUG
+    std::printf("[DBG] write_callback: user_data=%p\n",
+                static_cast<void*>(callbackData));
+#endif
 
-        return 0;
+    std::coroutine_handle<> h{};
+    if (callbackData) {
+      h = callbackData->handle;
     }
 
-    PLI_INT32 read_callback(p_cb_data data) {
-        // Retrieve the user data passed to the callback
-        auto* callbackData = reinterpret_cast<SchedulerCallbackData*>(data->user_data);
-
-        // Resume the coroutine
-        callbackData->handle.resume();
-
-        // Clean up the allocated memory
-        delete callbackData;
-
-        return 0;
+#ifdef RAPIDVPI_DEBUG
+    if (h) {
+      std::printf("[DBG] write_callback: resuming coroutine %p\n",
+                  static_cast<void*>(h.address()));
+    }
+    else {
+      std::printf("[DBG] write_callback: NULL handle or user_data\n");
+    }
+#endif
+    if (h) {
+      h.resume();
     }
 
-    /**
-     * @brief Callback function triggered by a value change event on a monitored net.
-     *
-     * This function resumes the coroutine associated with the event and cleans up the
-     * allocated memory for the callback data. It is invoked when the monitored net's
-     * value changes.
-     *
-     * @param data Pointer to the callback data structure.
-     * @return Always returns 0 indicating successful execution.
-     *
-     * The user data contains an `SchedulerCallbackData` structure which holds the coroutine
-     * handle to be resumed.
-     */
-    PLI_INT32 change_callback(p_cb_data data) {
-        // Retrieve the user data passed to the callback
-        auto* callbackData = reinterpret_cast<SchedulerCallbackData*>(data->user_data);
-
-        // Resume the coroutine
-        callbackData->handle.resume();
-
-        // Clean up the allocated memory
-        delete callbackData;
-
-        return 0;
+    // cbAfterDelay is one-shot. Simulator will drop the callback;
+    // we only need to free our user_data now.
+    if (callbackData) {
+      delete callbackData;
+      data->user_data = nullptr;
     }
 
+    return 0;
+  }
 
-    /**
-     * @brief Callback function triggered by a value change event on a monitored net.
-     *
-     * This function is called when the value of a monitored net changes. It checks
-     * if this change matches the targeted change value specified in the user data.
-     * If the change matches, the respective coroutine is resumed.
-     *
-     * If the change does not math the monitored change, then coroutine is not resumed
-     * and simulator will again call this callback on next change.
-     *
-     * @param data Pointer to the callback data structure.
-     * @return Always returns 0 indicating successful execution.
-     *
-     * The user data contains a `SchedulerCallbackData` structure which holds the coroutine handle to be resumed.
-     * The value of the monitored net is read and compared against the target value stored in the callback data.
-     * If the value matches, the coroutine is resumed and the allocated memory for the callback data is cleaned up.
-     */
+  // cbReadOnlySynch -> used by AwaitRead
+  PLI_INT32 read_callback(p_cb_data data) {
+#ifdef RAPIDVPI_DEBUG
+    std::printf("[DBG] read_callback entered: data=%p reason=%d obj=%p\n",
+                static_cast<void*>(data),
+                data ? data->reason : -1,
+                data ? static_cast<void*>(data->obj) : nullptr);
+#endif
 
-    PLI_INT32 change_callback_targeted(p_cb_data data) {
-        // Retrieve the user data passed to the callback
-        auto* callbackData = reinterpret_cast<SchedulerCallbackData*>(data->user_data);
-        const unsigned short int net_length = callbackData->cb_change_target_value_length;
+    auto* callbackData =
+      data
+        ? reinterpret_cast<SchedulerCallbackData*>(data->user_data)
+        : nullptr;
 
-        // read the value of the net monitored for a change
-        s_vpi_value read_val;
-        read_val.format = vpiVectorVal;
-        vpi_get_value(data->obj, &read_val);
+#ifdef RAPIDVPI_DEBUG
+    std::printf("[DBG] read_callback: user_data=%p\n",
+                static_cast<void*>(callbackData));
+#endif
 
-        // Determine the comparison based on the length
-        if (net_length <= 32) {
-            if (callbackData->cb_change_target_value == static_cast<uint32_t>(read_val.value.vector[0].aval)) {
-                // Resume the coroutine
-                callbackData->handle.resume();
-
-                // Clean up the allocated memory
-                delete callbackData;
-            }
-        } else {
-            auto combined_value = static_cast<uint64_t>(read_val.value.vector[1].aval);
-            combined_value = (combined_value << 32) | static_cast<uint32_t>(read_val.value.vector[0].aval);
-
-            if (callbackData->cb_change_target_value == combined_value) {
-                // Resume the coroutine
-                callbackData->handle.resume();
-
-                // Clean up the allocated memory
-                delete callbackData;
-            }
-        }
-
-        return 0;
+    std::coroutine_handle<> h{};
+    if (callbackData) {
+      h = callbackData->handle;
     }
 
+#ifdef RAPIDVPI_DEBUG
+    if (h) {
+      std::printf("[DBG] read_callback: resuming coroutine %p\n",
+                  static_cast<void*>(h.address()));
+    }
+    else {
+      std::printf("[DBG] read_callback: NULL handle or user_data\n");
+    }
+#endif
+    if (h) {
+      h.resume();
+    }
 
+    // cbReadOnlySynch is also one-shot; simulator removes callback.
+    // Free our user_data.
+    if (callbackData) {
+      delete callbackData;
+      data->user_data = nullptr;
+    }
 
+    return 0;
+  }
 
+  // cbValueChange, non-targeted -> used by AwaitChange (any change)
+  PLI_INT32 change_callback(p_cb_data data) {
+#ifdef RAPIDVPI_DEBUG
+    std::printf("[DBG] change_callback entered: data=%p reason=%d obj=%p\n",
+                static_cast<void*>(data),
+                data ? data->reason : -1,
+                data ? data->obj : nullptr);
+#endif
 
-}
+    auto* callbackData =
+      data
+        ? reinterpret_cast<SchedulerCallbackData*>(data->user_data)
+        : nullptr;
+
+#ifdef RAPIDVPI_DEBUG
+    std::printf("[DBG] change_callback: user_data=%p\n",
+                static_cast<void*>(callbackData));
+#endif
+
+    std::coroutine_handle<> h{};
+    if (callbackData) {
+      h = callbackData->handle;
+    }
+
+#ifdef RAPIDVPI_DEBUG
+    if (h) {
+      std::printf("[DBG] change_callback: resuming coroutine %p\n",
+                  static_cast<void*>(h.address()));
+    }
+    else {
+      std::printf("[DBG] change_callback: NULL handle or user_data\n");
+    }
+#endif
+    if (h) {
+      h.resume();
+    }
+
+    // Non-targeted cbValueChange: we only care about first change.
+    // Remove callback and free user_data so it cannot fire again.
+    if (callbackData) {
+      if (callbackData->cb_handle) {
+        vpi_remove_cb(callbackData->cb_handle);
+        callbackData->cb_handle = nullptr;
+      }
+      delete callbackData;
+      data->user_data = nullptr;
+    }
+
+    return 0;
+  }
+
+  // cbValueChange, targeted -> used by AwaitChange (target bit/value)
+  PLI_INT32 change_callback_targeted(p_cb_data data) {
+#ifdef RAPIDVPI_DEBUG
+    std::printf("[DBG] change_callback_targeted entered: data=%p reason=%d obj=%p\n",
+                static_cast<void*>(data),
+                data ? data->reason : -1,
+                data ? data->obj : nullptr);
+#endif
+
+    auto* callbackData =
+      data
+        ? reinterpret_cast<SchedulerCallbackData*>(data->user_data)
+        : nullptr;
+
+#ifdef RAPIDVPI_DEBUG
+    std::printf("[DBG] change_callback_targeted: user_data=%p\n",
+                static_cast<void*>(callbackData));
+#endif
+
+    if (!callbackData) {
+#ifdef RAPIDVPI_DEBUG
+      std::printf("[DBG] change_callback_targeted: NULL callbackData, returning.\n");
+#endif
+      return 0;
+    }
+
+    const unsigned int net_length = callbackData->cb_change_target_value_length;
+#ifdef RAPIDVPI_DEBUG
+    std::printf("[DBG] change_callback_targeted: target_value=%llu, len=%u\n",
+                static_cast<unsigned long long>(callbackData->cb_change_target_value),
+                net_length);
+#endif
+
+    // Read current value of the watched net
+    s_vpi_value read_val{};
+    read_val.format = vpiVectorVal;
+    vpi_get_value(data->obj, &read_val);
+
+    bool match = false;
+    unsigned long long cur_val = 0;
+
+    if (net_length <= 32) {
+      const auto aval0 =
+        static_cast<std::uint32_t>(read_val.value.vector[0].aval);
+      cur_val = static_cast<unsigned long long>(aval0);
+
+#ifdef RAPIDVPI_DEBUG
+      std::printf("[DBG] change_callback_targeted: current value (<=32) = 0x%llx\n",
+                  cur_val);
+#endif
+
+      if (callbackData->cb_change_target_value == cur_val) {
+        match = true;
+      }
+    }
+    else {
+      const auto aval0 =
+        static_cast<std::uint32_t>(read_val.value.vector[0].aval);
+      const auto aval1 =
+        static_cast<std::uint32_t>(read_val.value.vector[1].aval);
+
+      std::uint64_t combined =
+        (static_cast<std::uint64_t>(aval1) << 32) |
+        static_cast<std::uint64_t>(aval0);
+      cur_val = combined;
+
+#ifdef RAPIDVPI_DEBUG
+      std::printf("[DBG] change_callback_targeted: current value (>32) = 0x%llx\n",
+                  cur_val);
+#endif
+
+      if (callbackData->cb_change_target_value == combined) {
+        match = true;
+      }
+    }
+
+    if (!match) {
+#ifdef RAPIDVPI_DEBUG
+      std::printf("[DBG] change_callback_targeted: no match, keep callback.\n");
+#endif
+      // Keep waiting; do NOT free callbackData yet.
+      return 0;
+    }
+
+#ifdef RAPIDVPI_DEBUG
+    std::printf("[DBG] change_callback_targeted: MATCH, resuming coroutine %p\n",
+                static_cast<void*>(callbackData->handle.address()));
+#endif
+
+    std::coroutine_handle<> h = callbackData->handle;
+
+    // On match: remove callback and free user_data so it cannot fire again.
+    if (callbackData->cb_handle) {
+      vpi_remove_cb(callbackData->cb_handle);
+      callbackData->cb_handle = nullptr;
+    }
+    delete callbackData;
+    data->user_data = nullptr;
+
+    if (h) {
+      h.resume();
+    }
+
+    return 0;
+  }
+} // namespace scheduler

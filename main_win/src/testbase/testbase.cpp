@@ -20,50 +20,50 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-#include <string>
 
+#include <string>
+#include <cstdio>
 #include "testbase.hpp"
 
-
 namespace test {
-  /**
-   * @brief Adds a net to the netMap with a specified key and length.
-   *
-   * This function initializes the vpi_handle for a given net by constructing the
-   * full hierarchical name from the dutName and the provided key. It also sets
-   * the length of the net in the netMap.
-   *
-   * @param key The name of the net to add.
-   * @param length The length of the net in bits.
-   */
   void TestBase::addNet(const std::string& key, const unsigned int length) {
-    netMap[key].vpi_handle = vpi_handle_by_name((dutName + "." + key).c_str(), nullptr);
-    netMap[key].length = length;
+    const std::string full_name = dutName + "." + key;
+    vpiHandle h = vpi_handle_by_name(const_cast<char*>(full_name.c_str()), nullptr);
+
+    if (h == nullptr) {
+      std::printf("[ERROR]\tvpi_handle_by_name failed for '%s'\n", full_name.c_str());
+    }
+    else {
+#ifdef RAPIDVPI_DEBUG
+      std::printf("[DBG]\tRegistered net '%s' (full: '%s'), handle=%p, len=%u\n",
+                  key.c_str(), full_name.c_str(), static_cast<void*>(h), length);
+#endif
+    }
+
+    t_netmap_value entry{};
+    entry.vpi_handle = h;
+    entry.length = length;
+    netMap[key] = entry;
   }
 
-  /**
-   * @brief Retrieves the vpi_handle for a given net.
-   *
-   * This function looks up the specified net in the netMap and returns its corresponding vpi_handle.
-   *
-   * @param key The name of the net whose vpi_handle is to be retrieved.
-   * @return The vpi_handle associated with the specified net.
-   */
   vpiHandle TestBase::getNetHandle(const std::string& key) {
-    return netMap[key].vpi_handle;
+    const auto it = netMap.find(key);
+    if (it == netMap.end()) {
+      std::printf("[ERROR]\tgetNetHandle: key '%s' not found in netMap\n", key.c_str());
+      return nullptr;
+    }
+    if (it->second.vpi_handle == nullptr) {
+      std::printf("[ERROR]\tgetNetHandle: key '%s' has NULL vpi_handle\n", key.c_str());
+    }
+    return it->second.vpi_handle;
   }
 
-  /**
-   * @brief Retrieves the length of a specified net in bits.
-   *
-   * This function looks up the specified net in the netMap and returns its length.
-   *
-   * @param key The name of the net whose length is to be retrieved.
-   * @return The length of the net in bits.
-   */
   unsigned int TestBase::getNetLength(const std::string& key) {
-    return netMap[key].length;
+    const auto it = netMap.find(key);
+    if (it == netMap.end()) {
+      std::printf("[ERROR]\tgetNetLength: key '%s' not found in netMap\n", key.c_str());
+      return 0;
+    }
+    return it->second.length;
   }
-
-
-}
+} // namespace test

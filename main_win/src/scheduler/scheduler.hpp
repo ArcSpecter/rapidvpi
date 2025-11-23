@@ -23,26 +23,37 @@
 #ifndef DUT_TOP_SCHEDULER_HPP
 #define DUT_TOP_SCHEDULER_HPP
 
-
 #include <coroutine>
+#include <vector>
 
 #include <vpi_user.h>
 
-
 namespace scheduler {
-    struct SchedulerCallbackData {
-        std::coroutine_handle<> handle; // The coroutine handle to be resumed
-        unsigned long long int cb_change_target_value; // target value monitored for signal change
-        unsigned short int cb_change_target_value_length; // bitwize length of signal monitored for change
-    };
+  struct SchedulerCallbackData {
+    // Coroutine to resume when callback fires
+    std::coroutine_handle<> handle{};
 
-    PLI_INT32 write_callback(p_cb_data data);
-    PLI_INT32 read_callback(p_cb_data data);
-    PLI_INT32 change_callback(p_cb_data data);
-    PLI_INT32 change_callback_targeted(p_cb_data data);
+    // For targeted cbValueChange
+    unsigned long long cb_change_target_value{}; // target value
+    unsigned int cb_change_target_value_length{}; // bit-length of monitored signal
 
+    // Persistent VPI time/value storage for this callback.
+    // These must remain valid while the callback is registered.
+    s_vpi_time time{}; // used for cb_data.time (cbAfterDelay, cbReadOnlySynch, cbValueChange)
+    s_vpi_value vpi_value{}; // used for cb_data.value (cbValueChange, etc.)
 
-}
+    // Optional backing storage if you ever want vpiVectorVal with value.vector
+    std::vector<s_vpi_vecval> vec;
 
+    // For cbValueChange callbacks, remember the registered callback handle
+    // so we can explicitly vpi_remove_cb() when we are done.
+    vpiHandle cb_handle{}; // handle returned by vpi_register_cb
+  };
 
-#endif //DUT_TOP_SCHEDULER_HPP
+  PLI_INT32 write_callback(p_cb_data data);
+  PLI_INT32 read_callback(p_cb_data data);
+  PLI_INT32 change_callback(p_cb_data data);
+  PLI_INT32 change_callback_targeted(p_cb_data data);
+} // namespace scheduler
+
+#endif // DUT_TOP_SCHEDULER_HPP
