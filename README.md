@@ -3,7 +3,7 @@
 
 
 # RapidVPI
-Blazingly fast, modern C++ API using coroutines for efficient RTL verification and co-simulation via the VPI interface.
+Modern C++ API using coroutines for efficient RTL verification and co-simulation via the VPI interface.
 ## Table of Contents
 - [Introduction](#introduction)
 - [Why RapidVPI?](#why-rapidvpi)
@@ -30,7 +30,7 @@ Blazingly fast, modern C++ API using coroutines for efficient RTL verification a
 
 ### Introduction
 
-The RapidVPI API allows you to write modern C++ code for verification and co-simulation of digital RTL HDL designs using any simulator which supports VPI interface. Currently, as of now this library was tested with Iverilog. The API abstracts many of the VPI related boilerplate and tedious mechanisms and implements all the necessary signal driving and reading via the convenient coroutine mechanism native to C++ since version 20. User just creates the coroutine awaitable object, adds operations to it such as read, write and suspends it with co_await statement.
+The RapidVPI API allows you to write modern C++ code for verification and co-simulation of digital RTL HDL designs using any simulator which supports VPI interface. Currently, as of now this library was tested with Iverilog and QuestaSim and proven to be working reliably. The API abstracts many of the VPI related boilerplate and tedious mechanisms and implements all the necessary signal driving and reading via the convenient coroutine mechanism native to C++ since version 20. User just creates the coroutine awaitable object, adds operations to it such as read, write and suspends it with co_await statement.
 
 ### Why RapidVPI?
 The motivation for the development of this library was the ability to use all the flexible and advanced features of modern C++ during the RTL verification or co-simulation since verification itself is a software task and should use the proper software design tool such as C++; SystemVerilog is not a tool which is as powerful as C++ when it comes to modeling some advanced complex system. Additionally, SystemVerilog running with all of its features requires a very expensive license for the EDA tools, such a basic feature as randomization of variables in a class for example is not supported even in a lower tier paid simulators. The VPI interface on the other hand is supported by most lowest tier packaged commercial simulators, and of course it is supported by Iverilog which is a free and fast tool for Verilog simulation.
@@ -85,32 +85,46 @@ Above will install the library and its .so files and necessary headers in approp
 ### Installation (Windows)
 In order to be able to use this API on Windows (currently tested Win11), it is assumed that user installs MSYS2 system in his windows environment, and inside that environment he installs all the same prerequisite packages like iverilog, cmake, ninja. Obviously, that he needs to compile from source and build/install the iverilog inside MSYS environment as well.
 
-Assuming that above is done, the following environment variable must be set:
-VPI_INCLUDE_DIR - pointing to the location of vpi_user.h (For example, ~/eda/quartus25_1/questa_fse/include/ where QuestaSim installed)
+Assuming that above is done, the following environment variables must be set.
+These two are within QuestaSim installation folder:
+VPI_INCLUDE_DIR=C:\eda\quartus_24_1_lite\questa_fse\include)
+VPI_LIB_DIR=C:\eda\quartus_24_1_lite\questa_fse\win64
+
+This environment variable will simply point to the folder where the RapidVPI library is located after the CMake compile & install process:
+RAPIDVPI_CMAKE_DIR=C:\msys2\home\myusername\tools\rapidvpi\main_win\install\lib\cmake\rapidvpi
 
 After that we just have first to build and install core RapidVPI components, go into the `main_win` folder and:
 ```
-./configure.sh
-./build.sh
-./install.sh
+./configure.bat
+./build.bat
+./install.bat
 ```
 
-That installs the RapidVPI in the msys environment created inside windows.
+That installs the RapidVPI in the location pointed out by RAPIDVPI_CMAKE_DIR which we set earlier.
 
 Then to compile the cosimulation template project `vip_template` just go to `./templates_win/vip_template` and:
 ```
-./configure.sh
-./build.sh
+./configure.bat
+./build.bat
 ```
 Above will create the dynamic library which can be used to cosimulate with iverilog.
 
 Next, go to `./templates_win/rtl_template` and:
 ```
-./configure.sh
-./compile.sh
-./run.sh
+./configure.bat
+./sim_questa_init.bat
+./compile.bat
+./run.bat
 ```
-Above will configure, compile the test SystemVerilog sources included as part of `rtl_template` project, then it will fire up simulation with `vvp` and you will see output printed out in console.
+
+Or just run GUI QuestaSim as:
+```
+./run_gui.bat
+```
+
+This is an incremental build system with CMake/Make sensing the file changes, so if you change any file then running the CMake targets `sim_questa_run` or `sim_questa_run_gui` is enough since it will automatically recompile the changed file or files dependent on it.
+
+If you add/remove source files from your build then you need to run CMake target `sim_questa_init` again.
 
 ### Quick start
 Build the vip_template shared co-simulation .so file:
