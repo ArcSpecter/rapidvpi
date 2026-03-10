@@ -9,7 +9,6 @@ Blazingly fast, modern C++ API using coroutines for efficient RTL verification a
 - [Why RapidVPI?](#why-rapidvpi)
 - [Prerequisites](#prerequisites)
 - [Installation (Linux)](#installation-linux)
-- [Installation (Windows)](#installation-windows)
 - [Quick start](#quick-start)
 - [Writing RapidVPI test code](#writing-rapidvpi-test-code)
 - [RapidVPI Internal Architecture](#rapidvpi-internal-architecture)
@@ -81,36 +80,6 @@ Above will install the library and its .so files and necessary headers in approp
 -- Up-to-date: /usr/local/lib/cmake/rapidvpi/rapidvpiConfig.cmake
 -- Up-to-date: /usr/local/lib/cmake/rapidvpi/rapidvpiConfigVersion.cmake
 ```
-
-### Installation (Windows)
-In order to be able to use this API on Windows (currently tested Win11), it is assumed that user installs MSYS2 system in his windows environment, and inside that environment he installs all the same prerequisite packages like iverilog, cmake, ninja. Obviously, that he needs to compile from source and build/install the iverilog inside MSYS environment as well.
-
-Assuming that above is done, the following environment variable must be set:
-VPI_INCLUDE_DIR - pointing to the location of vpi_user.h (For example, ~/eda/quartus25_1/questa_fse/include/ where QuestaSim installed)
-
-After that we just have first to build and install core RapidVPI components, go into the `main_win` folder and:
-```
-./configure.sh
-./build.sh
-./install.sh
-```
-
-That installs the RapidVPI in the msys environment created inside windows.
-
-Then to compile the cosimulation template project `vip_template` just go to `./templates_win/vip_template` and:
-```
-./configure.sh
-./build.sh
-```
-Above will create the dynamic library which can be used to cosimulate with iverilog.
-
-Next, go to `./templates_win/rtl_template` and:
-```
-./configure.sh
-./compile.sh
-./run.sh
-```
-Above will configure, compile the test SystemVerilog sources included as part of `rtl_template` project, then it will fire up simulation with `vvp` and you will see output printed out in console.
 
 ### Quick start
 Build the vip_template shared co-simulation .so file:
