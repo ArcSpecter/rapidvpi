@@ -57,6 +57,9 @@ set(WORK_LIB "work")
 set(WORK_LIB_DIR "${QUESTA_SIM_DIR}/${WORK_LIB}")
 
 set(QUESTA_INIT_COMMANDS)
+# If you need external submodule addition add it as below example:
+# include(${EXT_DIR}/rtl_xxx/scripts/cmake/questa_module.cmake)
+
 set(QUESTA_RTL_VLOG_COMMANDS)
 
 foreach(RTL_SOURCE IN LISTS RTL_SOURCES)
