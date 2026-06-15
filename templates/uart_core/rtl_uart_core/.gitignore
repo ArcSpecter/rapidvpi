@@ -1,0 +1,7 @@
+build/
+.vscode/
+
+tags
+
+# For linter
+/verilator.f
