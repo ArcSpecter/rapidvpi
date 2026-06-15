@@ -41,6 +41,32 @@ ninja, gcc >14.2, cmake >3.1, iverilog (tested with), gtkwave (optional)
 The following environment variable must be set:
 VPI_INCLUDE_DIR - pointing to the location of vpi_user.h (For example, ~/eda/quartus25_1/questa_fse/include/ where QuestaSim installed)
 
+Example of settings in typical `.bashrc`:
+```bash
+export VPI_LIB_DIR=/var/mnt/tools/iverilog/libveriuser
+export VPI_INCLUDE_DIR=/var/mnt/tools/quartus25_1/questa_fse/include
+
+export SALT_LICENSE_SERVER=/var/mnt/tools/licenses/questa_fe/license.dat
+
+export PATH=$PATH:/var/mnt/tools/verible/bin/
+export PATH=$PATH:/var/mnt/tools/slang-server/build/bin/
+export PATH=$PATH:/var/mnt/tools/svls/
+export PATH=$PATH:/var/mnt/tools/svlint/bin/
+export PATH=$PATH:/var/mnt/tools/quartus25_1/questa_fse/bin/
+export PATH=$PATH:/var/mnt/tools/
+export PATH=$PATH:/var/mnt/tools/synlig
+
+export LD_PRELOAD=/usr/lib64/libstdc++.so.6
+export LM_HOSTID=d8bbc1c80270
+
+export LD_LIBRARY_PATH=/usr/local/lib/rapidvpi
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib/rapidvpi
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib64
+
+export QSYS_ROOTDIR="/var/mnt/tools/quartus25_1/quartus/sopc_builder/bin"
+export PATH="$HOME/.local/npm/bin:$PATH"
+```
+
 Get the repository, compile and install:
 ```bash
 git clone https://github.com/ArcSpecter/rapidvpi.git

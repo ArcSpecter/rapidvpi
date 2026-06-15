@@ -1,0 +1,1 @@
+add_subdirectory(uart_core_intf)

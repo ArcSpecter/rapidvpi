@@ -1,0 +1,157 @@
+#include "vip_uart/agents/uart_rx/rx.hpp"
+
+#include "vip_common/common/logger.hpp"
+
+namespace vip::uart {
+
+UartRx::RunTask UartRx::agent(const unsigned idx) {
+    if (idx >= ports_.size()) {
+        co_return;
+    }
+
+    auto& port = ports_.at(idx);
+    co_await drive_cts_(port);
+
+    for (;;) {
+        co_await drive_cts_(port);
+
+        bool in_reset = false;
+        co_await reset_asserted_(in_reset);
+        if (in_reset) {
+            co_await wait_ticks_(params_.idle_poll_ticks);
+            continue;
+        }
+
+        bool line = params_.idle_high;
+        co_await sample_line_(port, line);
+        if (line == params_.idle_high) {
+            co_await wait_ticks_(params_.idle_poll_ticks);
+            continue;
+        }
+
+        UartFrame frame;
+        co_await capture_frame_(port, frame);
+
+        port.observed_count++;
+        if (port.capture_enable) {
+            port.history.push_back(frame);
+        }
+        if (scb_stream_ != nullptr) {
+            scb_stream_->observe_frame(port.cfg.name, frame);
+        }
+        if (scb_rules_ != nullptr) {
+            scb_rules_->observe_frame(port.cfg.name, frame);
+        }
+
+        if (verbose_) {
+            vip::common::log_line("vip_uart_rx",
+                                  "INFO",
+                                  port.cfg.name + " observed byte "
+                                      + std::to_string(static_cast<unsigned>(frame.data)));
+        }
+    }
+
+    co_return;
+}
+
+UartRx::RunUserTask UartRx::wait_ticks_(const unsigned ticks) {
+    const unsigned n = ticks == 0u ? 1u : ticks;
+    co_await utils_.clock(static_cast<int>(n), 1);
+    co_return;
+}
+
+UartRx::RunUserTask UartRx::sample_line_(PortState& port, bool& value) {
+    auto r = tb_.getCoRead(0);
+    r.read(port.cfg.rx_net);
+    co_await r;
+    value = (r.getNum(port.cfg.rx_net) & 1u) != 0u;
+    co_return;
+}
+
+UartRx::RunUserTask UartRx::reset_asserted_(bool& asserted) {
+    asserted = false;
+    if (reset_net_.empty()) {
+        co_return;
+    }
+
+    auto r = tb_.getCoRead(0);
+    r.read(reset_net_);
+    co_await r;
+    const bool rst_value = (r.getNum(reset_net_) & 1u) != 0u;
+    asserted = reset_active_low_ ? !rst_value : rst_value;
+    co_return;
+}
+
+UartRx::RunUserTask UartRx::drive_cts_(PortState& port) {
+    if (!port.cts_drive_enable || port.cfg.cts_net.empty()) {
+        co_return;
+    }
+
+    const bool physical = active_to_physical(port.cts_active, port.cfg.cts_active_low);
+    auto w = tb_.getCoWrite(0);
+    w.write(port.cfg.cts_net, physical ? 1 : 0);
+    co_await w;
+
+    if (scb_rules_ != nullptr) {
+        scb_rules_->observe_cts_drive(port.cfg.name, port.cts_active);
+    }
+    co_return;
+}
+
+UartRx::RunUserTask UartRx::capture_frame_(PortState& port, UartFrame& frame) {
+    frame.start_time_ns = static_cast<double>(vip::common::sim_time_ns());
+    frame.data_bits = params_.data_bits;
+    frame.stop_bits = params_.stop_bits;
+    frame.parity = params_.parity;
+
+    const bool start_level = !params_.idle_high;
+    const bool stop_level = params_.idle_high;
+
+    co_await wait_ticks_(params_.sample_tick);
+
+    bool start_sample = stop_level;
+    co_await sample_line_(port, start_sample);
+    if (start_sample != start_level) {
+        frame.framing_error = true;
+    }
+
+    std::uint8_t data = 0u;
+    for (unsigned bit = 0u; bit < params_.data_bits; ++bit) {
+        co_await wait_ticks_(params_.bit_ticks);
+        bool sample = false;
+        co_await sample_line_(port, sample);
+
+        const unsigned dst_bit = params_.lsb_first ? bit : (params_.data_bits - 1u - bit);
+        if (sample) {
+            data = static_cast<std::uint8_t>(data | static_cast<std::uint8_t>(1u << dst_bit));
+        }
+    }
+    frame.data = static_cast<std::uint8_t>(data & params_.data_mask());
+
+    if (params_.parity_enable()) {
+        co_await wait_ticks_(params_.bit_ticks);
+        bool parity_sample = false;
+        co_await sample_line_(port, parity_sample);
+        const bool expected = uart_parity_bit(frame.data, params_);
+        frame.parity_error = parity_sample != expected;
+    }
+
+    bool all_stop_low = true;
+    for (unsigned stop = 0u; stop < params_.stop_bits; ++stop) {
+        co_await wait_ticks_(params_.bit_ticks);
+        bool stop_sample = false;
+        co_await sample_line_(port, stop_sample);
+        if (stop_sample != stop_level) {
+            frame.framing_error = true;
+        }
+        all_stop_low = all_stop_low && (stop_sample == start_level);
+    }
+
+    frame.break_detect = frame.framing_error
+        && frame.data == 0u
+        && all_stop_low;
+    frame.end_time_ns = static_cast<double>(vip::common::sim_time_ns());
+    co_return;
+}
+
+} // namespace vip::uart
