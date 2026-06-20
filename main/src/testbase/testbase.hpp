@@ -26,8 +26,13 @@
 #include <cmath>
 #include <chrono>
 #include <coroutine>
+#include <cstdint>
 #include <memory>
 #include <exception>
+#include <limits>
+#include <stdexcept>
+#include <type_traits>
+#include <utility>
 #include <vector>
 #include <unordered_map>
 #include <functional>
@@ -56,36 +61,87 @@ namespace test {
     std::vector<unsigned int> uintValues;
   } t_read_value;
 
-  // Enum class and conversion factors
-  enum class TimeUnit { ms, us, ns, ps };
+  using sim_tick_t = std::uint64_t;
 
-  inline constexpr auto ms = TimeUnit::ms;
-  inline constexpr auto us = TimeUnit::us;
-  inline constexpr auto ns = TimeUnit::ns;
+  enum class TimeUnit {
+    ticks,
+    ps,
+    ns,
+    us,
+    ms
+  };
+
+  inline constexpr auto ticks = TimeUnit::ticks;
   inline constexpr auto ps = TimeUnit::ps;
+  inline constexpr auto ns = TimeUnit::ns;
+  inline constexpr auto us = TimeUnit::us;
+  inline constexpr auto ms = TimeUnit::ms;
 
-  template <TimeUnit T>
-  struct TimeUnitConversion;
+  template <TimeUnit U>
+  struct TimeUnitSeconds;
 
   template <>
-  struct TimeUnitConversion<TimeUnit::ms> {
-    static constexpr double factor = 1e-3;
+  struct TimeUnitSeconds<TimeUnit::ms> {
+    static constexpr long double value = 1.0e-3L;
   };
 
   template <>
-  struct TimeUnitConversion<TimeUnit::us> {
-    static constexpr double factor = 1e-6;
+  struct TimeUnitSeconds<TimeUnit::us> {
+    static constexpr long double value = 1.0e-6L;
   };
 
   template <>
-  struct TimeUnitConversion<TimeUnit::ns> {
-    static constexpr double factor = 1e-9;
+  struct TimeUnitSeconds<TimeUnit::ns> {
+    static constexpr long double value = 1.0e-9L;
   };
 
   template <>
-  struct TimeUnitConversion<TimeUnit::ps> {
-    static constexpr double factor = 1e-12;
+  struct TimeUnitSeconds<TimeUnit::ps> {
+    static constexpr long double value = 1.0e-12L;
   };
+
+  template <TimeUnit U>
+  struct TimeValueType {
+    using type = double;
+  };
+
+  template <>
+  struct TimeValueType<TimeUnit::ticks> {
+    using type = sim_tick_t;
+  };
+
+  template <TimeUnit U>
+  using time_value_t = typename TimeValueType<U>::type;
+
+  template <TimeUnit U>
+  using delay_arg_t = time_value_t<U>;
+
+  namespace detail {
+    [[nodiscard]] inline sim_tick_t vpi_time_to_ticks(const s_vpi_time& time) noexcept {
+      const auto high = static_cast<std::uint32_t>(time.high);
+      const auto low = static_cast<std::uint32_t>(time.low);
+
+      return (static_cast<sim_tick_t>(high) << 32u) |
+        static_cast<sim_tick_t>(low);
+    }
+
+    inline void set_vpi_time_from_ticks(s_vpi_time& time,
+                                        const sim_tick_t tick_count) noexcept {
+      const auto high = static_cast<std::uint32_t>(tick_count >> 32u);
+      const auto low = static_cast<std::uint32_t>(tick_count & 0xffffffffULL);
+
+      time.type = vpiSimTime;
+      time.high = static_cast<PLI_UINT32>(high);
+      time.low = static_cast<PLI_UINT32>(low);
+    }
+
+    [[nodiscard]] inline sim_tick_t current_vpi_time_ticks() noexcept {
+      s_vpi_time time{};
+      time.type = vpiSimTime;
+      vpi_get_time(nullptr, &time);
+      return vpi_time_to_ticks(time);
+    }
+  } // namespace detail
 
   /**
    * @class TestBase
@@ -96,7 +152,8 @@ namespace test {
   public:
     explicit TestBase()
       : dutName()
-        , sim_time_unit(0.0)
+        , vpi_time_precision_exp10_(0)
+        , vpi_tick_period_s_(0.0L)
         , netMap() {
     }
 
@@ -108,9 +165,18 @@ namespace test {
 
     virtual void initNets() = 0; // Force derived classes to implement
 
-    // Function for updating simulation time unit
-    void updateSimTimeUnit(const double SimTimeUnit) {
-      sim_time_unit = SimTimeUnit;
+    // Function for updating effective VPI simulator time precision
+    void updateVpiTimePrecision(const int precision_exp10) {
+      vpi_time_precision_exp10_ = precision_exp10;
+      vpi_tick_period_s_ = std::pow(10.0L, static_cast<long double>(precision_exp10));
+    }
+
+    [[nodiscard]] int vpiTimePrecisionExp10() const noexcept {
+      return vpi_time_precision_exp10_;
+    }
+
+    [[nodiscard]] long double vpiTickPeriodSeconds() const noexcept {
+      return vpi_tick_period_s_;
     }
 
     // Net operations
@@ -129,10 +195,10 @@ namespace test {
     class AwaitWrite {
     public:
       // Main constructor. Gets reference to base class object and delay for event scheduling
-      AwaitWrite(TestBase& parentRef, const unsigned long long int delay)
+      AwaitWrite(TestBase& parentRef, const sim_tick_t delay_ticks)
         : cb_handle(nullptr)
           , parent(parentRef)
-          , delay(delay)
+          , delay_ticks(delay_ticks)
           , grouped_writes()
           , handle(nullptr) {
       }
@@ -157,16 +223,17 @@ namespace test {
       // adds force operation to grouped_writes; parameter is string
       void force(const std::string& netStr, const std::string& valStr, unsigned int base = 2);
 
-      // for modifying the delay of the callback object
-      template <TimeUnit T>
-      void setDelay(double delay);
-      // same as setDelay but with default ns precision argument
-      void setDelay(double delay);
+      void setDelay() {
+        delay_ticks = 0;
+      }
+
+      template <TimeUnit U>
+      void setDelay(delay_arg_t<U> delay);
 
     private:
       vpiHandle cb_handle; // handle for a callback
       TestBase& parent; // reference to the DUT test object of Test class
-      unsigned long long int delay; // simulation time delay
+      sim_tick_t delay_ticks; // raw simulator tick delay
       std::unordered_map<std::string, t_write_value> grouped_writes; // write ops
       std::coroutine_handle<> handle; // coroutine handle
     };
@@ -177,12 +244,12 @@ namespace test {
     class AwaitRead {
     public:
       // Main constructor. Gets reference to base class object and delay for event scheduling
-      AwaitRead(TestBase& parentRef, const unsigned long long int delay)
+      AwaitRead(TestBase& parentRef, const sim_tick_t delay_ticks)
         : cb_handle(nullptr)
           , parent(parentRef)
-          , delay(delay)
+          , delay_ticks(delay_ticks)
           , grouped_reads()
-          , rdTime(0)
+          , resume_time_ticks(0)
           , handle(nullptr) {
       }
 
@@ -199,22 +266,23 @@ namespace test {
       void await_suspend(std::coroutine_handle<> h);
       void await_resume() noexcept;
 
-      // for modifying the delay of the callback object
-      template <TimeUnit T>
-      void setDelay(double delay);
-      void setDelay(double delay); // Default ns format
+      void setDelay() {
+        delay_ticks = 0;
+      }
 
-      template <TimeUnit T>
-      double getTime() const;
-      double getTime() const; // Default ns format
+      template <TimeUnit U>
+      void setDelay(delay_arg_t<U> delay);
+
+      template <TimeUnit U>
+      time_value_t<U> getTime() const;
 
     private:
       vpiHandle cb_handle; // handle for a callback
       std::string getStr(const std::string& netStr, unsigned int base = 2);
       TestBase& parent; // reference to the DUT test object of Test class
-      unsigned long long int delay; // simulation time delay
+      sim_tick_t delay_ticks; // raw simulator tick delay
       std::unordered_map<std::string, t_read_value> grouped_reads; // read ops
-      unsigned long long rdTime; // Current read simulation time
+      sim_tick_t resume_time_ticks; // current read simulation time in raw ticks
       std::coroutine_handle<> handle; // coroutine handle
     };
 
@@ -231,7 +299,7 @@ namespace test {
           , change_is_targeted(false)
           , rd_change_value()
           , cb_handle(nullptr)
-          , rdTime(0)
+          , resume_time_ticks(0)
           , handle(nullptr) {
       }
 
@@ -243,15 +311,14 @@ namespace test {
           , change_is_targeted(true)
           , rd_change_value()
           , cb_handle(nullptr)
-          , rdTime(0)
+          , resume_time_ticks(0)
           , handle(nullptr) {
         rd_change_value.strValue.clear();
         rd_change_value.uintValues.clear();
       }
 
-      template <TimeUnit T>
-      double getTime() const;
-      double getTime() const; // Default ns format
+      template <TimeUnit U>
+      time_value_t<U> getTime() const;
 
       // Coroutine service functions
       bool await_ready() const noexcept { return false; }
@@ -273,7 +340,7 @@ namespace test {
       t_read_value rd_change_value; // holds the change value being read
 
       vpiHandle cb_handle; // handle for a callback for cbValueChange
-      unsigned long long rdTime; // Current read simulation time
+      sim_tick_t resume_time_ticks; // current change simulation time in raw ticks
       std::coroutine_handle<> handle; // coroutine handle
     };
 
@@ -416,30 +483,26 @@ namespace test {
     // ============================================================
     // Factory helpers
     // ============================================================
-    template <TimeUnit T>
-    AwaitWrite getCoWrite(const double delay) {
-      constexpr double factor = TimeUnitConversion<T>::factor;
-      double adjusted_delay = delay * factor / sim_time_unit;
-      return AwaitWrite{*this, static_cast<unsigned long long int>(adjusted_delay)};
+    AwaitWrite getCoWrite() {
+      return AwaitWrite{*this, 0};
     }
 
-    AwaitWrite getCoWrite(const double delay) {
-      return getCoWrite<ns>(delay);
+    template <TimeUnit U>
+    AwaitWrite getCoWrite(const delay_arg_t<U> delay) {
+      return AwaitWrite{*this, delay_to_ticks_<U>(delay)};
     }
 
     AwaitChange getCoChange(const std::string& net) {
       return AwaitChange{*this, net};
     }
 
-    template <TimeUnit T>
-    AwaitRead getCoRead(const double delay) {
-      constexpr double factor = TimeUnitConversion<T>::factor;
-      double adjusted_delay = delay * factor / sim_time_unit;
-      return AwaitRead{*this, static_cast<unsigned long long int>(adjusted_delay)};
+    AwaitRead getCoRead() {
+      return AwaitRead{*this, 0};
     }
 
-    AwaitRead getCoRead(const double delay) {
-      return getCoRead<ns>(delay);
+    template <TimeUnit U>
+    AwaitRead getCoRead(const delay_arg_t<U> delay) {
+      return AwaitRead{*this, delay_to_ticks_<U>(delay)};
     }
 
     AwaitChange getCoChange(const std::string& net, unsigned long long int target_value) {
@@ -457,10 +520,99 @@ namespace test {
     std::vector<std::coroutine_handle<>> test_handles;
 
   private:
+    [[nodiscard]] long double require_vpi_tick_period_s_() const {
+      if (vpi_tick_period_s_ <= 0.0L) {
+        throw std::runtime_error("RapidVPI VPI time precision has not been initialized");
+      }
+      return vpi_tick_period_s_;
+    }
+
+    template <TimeUnit U>
+    [[nodiscard]] sim_tick_t delay_to_ticks_(const delay_arg_t<U> delay) const {
+      if constexpr (U == TimeUnit::ticks) {
+        return delay;
+      }
+      else {
+        if (delay <= 0.0) {
+          return 0;
+        }
+
+        const long double raw_ticks =
+          static_cast<long double>(delay) * TimeUnitSeconds<U>::value /
+          require_vpi_tick_period_s_();
+
+        return ceil_delay_ticks_(raw_ticks);
+      }
+    }
+
+    template <TimeUnit U>
+    [[nodiscard]] time_value_t<U> ticks_to_time_(const sim_tick_t tick_count) const {
+      if constexpr (U == TimeUnit::ticks) {
+        return tick_count;
+      }
+      else {
+        const long double seconds =
+          static_cast<long double>(tick_count) * require_vpi_tick_period_s_();
+        const long double value = seconds / TimeUnitSeconds<U>::value;
+        return static_cast<double>(value);
+      }
+    }
+
+    [[nodiscard]] static sim_tick_t ceil_delay_ticks_(const long double raw_ticks) {
+      if (raw_ticks <= 0.0L) {
+        return 0;
+      }
+      if (!std::isfinite(raw_ticks)) {
+        throw std::overflow_error("RapidVPI delay exceeds sim_tick_t range");
+      }
+
+      constexpr long double rel_eps = 1.0e-12L;
+      const long double nearest = std::floor(raw_ticks + 0.5L);
+      const long double diff = raw_ticks > nearest ? raw_ticks - nearest : nearest - raw_ticks;
+      const long double scale = raw_ticks > 1.0L ? raw_ticks : 1.0L;
+
+      long double rounded_ticks;
+      if (diff <= rel_eps * scale) {
+        rounded_ticks = nearest;
+      }
+      else {
+        rounded_ticks = std::ceil(raw_ticks);
+      }
+
+      const long double max_ticks =
+        static_cast<long double>(std::numeric_limits<sim_tick_t>::max());
+      if (rounded_ticks > max_ticks) {
+        throw std::overflow_error("RapidVPI delay exceeds sim_tick_t range");
+      }
+
+      return static_cast<sim_tick_t>(rounded_ticks);
+    }
+
     std::string dutName; // name of the DUT
-    double sim_time_unit; // simulation time unit
+    int vpi_time_precision_exp10_; // vpi_get(vpiTimePrecision, nullptr) result
+    long double vpi_tick_period_s_; // physical duration of one raw VPI tick
     std::unordered_map<std::string, t_netmap_value> netMap; // [key, value] list of DUT signals
   };
+
+  template <TimeUnit U>
+  inline void TestBase::AwaitWrite::setDelay(const delay_arg_t<U> delay) {
+    delay_ticks = parent.delay_to_ticks_<U>(delay);
+  }
+
+  template <TimeUnit U>
+  inline void TestBase::AwaitRead::setDelay(const delay_arg_t<U> delay) {
+    delay_ticks = parent.delay_to_ticks_<U>(delay);
+  }
+
+  template <TimeUnit U>
+  inline time_value_t<U> TestBase::AwaitRead::getTime() const {
+    return parent.ticks_to_time_<U>(resume_time_ticks);
+  }
+
+  template <TimeUnit U>
+  inline time_value_t<U> TestBase::AwaitChange::getTime() const {
+    return parent.ticks_to_time_<U>(resume_time_ticks);
+  }
 } // namespace test
 
 #endif // DUT_TOP_TESTBASE_HPP

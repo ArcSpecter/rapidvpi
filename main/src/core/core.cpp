@@ -22,6 +22,8 @@
 
 #include "core.hpp"
 
+#include <cstdio>
+
 namespace core {
   static std::unique_ptr<test::TestBase> dut;
 
@@ -39,9 +41,14 @@ namespace core {
 
     dut = createTestInstance();
 
-    // Obtain simulation time unit and save it into the DUT object
-    const double SimTimeUnit = std::pow(10, vpi_get(vpiTimePrecision, nullptr));
-    dut->updateSimTimeUnit(SimTimeUnit);
+    // Obtain effective VPI time precision and save it into the DUT object.
+    const int precision_exp10 = vpi_get(vpiTimePrecision, nullptr);
+    dut->updateVpiTimePrecision(precision_exp10);
+#ifdef RAPIDVPI_DEBUG
+    std::printf("[DBG] RapidVPI VPI time precision exp10=%d, tick_period_s=%.21Lg\n",
+                precision_exp10,
+                dut->vpiTickPeriodSeconds());
+#endif
 
     // Initialize all the Nets which user entered in Test class
     dut->initNets();

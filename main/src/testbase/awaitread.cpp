@@ -25,47 +25,14 @@
 
 namespace test {
   // ============================================================
-  // Delay helpers
-  // ============================================================
-  template <TimeUnit T>
-  void TestBase::AwaitRead::setDelay(const double delay) {
-    constexpr double factor = TimeUnitConversion<T>::factor;
-    double adjusted_delay = delay * factor / parent.sim_time_unit;
-    this->delay = static_cast<unsigned long long int>(adjusted_delay);
-  }
-
-  void TestBase::AwaitRead::setDelay(const double delay) {
-    setDelay<ns>(delay);
-  }
-
-  template void TestBase::AwaitRead::setDelay<ps>(const double);
-  template void TestBase::AwaitRead::setDelay<ns>(const double);
-  template void TestBase::AwaitRead::setDelay<us>(const double);
-  template void TestBase::AwaitRead::setDelay<ms>(const double);
-
-  template <TimeUnit T>
-  double TestBase::AwaitRead::getTime() const {
-    return static_cast<double>(rdTime) * parent.sim_time_unit / TimeUnitConversion<T>::factor;
-  }
-
-  double TestBase::AwaitRead::getTime() const {
-    return getTime<ns>();
-  }
-
-  template double TestBase::AwaitRead::getTime<ps>() const;
-  template double TestBase::AwaitRead::getTime<ns>() const;
-  template double TestBase::AwaitRead::getTime<us>() const;
-  template double TestBase::AwaitRead::getTime<ms>() const;
-
-  // ============================================================
   // Core awaitable
   // ============================================================
   void TestBase::AwaitRead::await_suspend(std::coroutine_handle<> h) {
     handle = h;
 
 #ifdef RAPIDVPI_DEBUG
-    std::printf("[DBG] AwaitRead::await_suspend enter, delay=%llu, handle=%p\n",
-                static_cast<unsigned long long>(delay),
+    std::printf("[DBG] AwaitRead::await_suspend enter, delay_ticks=%llu, handle=%p\n",
+                static_cast<unsigned long long>(delay_ticks),
                 static_cast<void*>(handle.address()));
 #endif
 
@@ -74,9 +41,7 @@ namespace test {
     callbackData->handle = h;
 
     // Persistent time for Questa (MUST be non-null for cbReadOnlySynch)
-    callbackData->time.type = vpiSimTime;
-    callbackData->time.high = 0;
-    callbackData->time.low = static_cast<PLI_INT32>(delay);
+    detail::set_vpi_time_from_ticks(callbackData->time, delay_ticks);
 
     // We don't need .vpi_value for cbReadOnlySynch, so leave it default-init
 
@@ -129,17 +94,12 @@ namespace test {
     std::printf("[DBG] AwaitRead::await_resume enter\n");
 #endif
 
-    // sample current simulation time
-    const vpiHandle cbH = nullptr;
-    s_vpi_time tim{};
-    tim.type = vpiSimTime;
-    vpi_get_time(cbH, &tim);
-    rdTime = (static_cast<unsigned long long>(tim.high) << 32) |
-      static_cast<unsigned long long>(tim.low);
+    resume_time_ticks = detail::current_vpi_time_ticks();
 
 #ifdef RAPIDVPI_DEBUG
-    std::printf("[DBG] AwaitRead::await_resume: time=%llu, num_grouped_reads=%zu\n",
-                rdTime, grouped_reads.size());
+    std::printf("[DBG] AwaitRead::await_resume: resume_time_ticks=%llu, num_grouped_reads=%zu\n",
+                static_cast<unsigned long long>(resume_time_ticks),
+                grouped_reads.size());
 #endif
 
     s_vpi_value read_val{};
@@ -194,7 +154,8 @@ namespace test {
     // NOTE:
     //  - cbReadOnlySynch is one-shot; Questa removes the callback after firing.
     //  - Our scheduler::read_callback deletes SchedulerCallbackData.
-    //  - Here we just clear local book-keeping if needed; no vpi_remove_cb().
+    //  - Here we just clear local book-keeping; no vpi_remove_cb().
+    cb_handle = nullptr;
   }
 
   // ============================================================

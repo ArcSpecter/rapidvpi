@@ -24,20 +24,6 @@
 #include <cstdio>
 
 namespace test {
-  template <TimeUnit T>
-  double TestBase::AwaitChange::getTime() const {
-    return static_cast<double>(rdTime) * parent.sim_time_unit / TimeUnitConversion<T>::factor;
-  }
-
-  double TestBase::AwaitChange::getTime() const {
-    return getTime<ns>();
-  }
-
-  template double TestBase::AwaitChange::getTime<ps>() const;
-  template double TestBase::AwaitChange::getTime<ns>() const;
-  template double TestBase::AwaitChange::getTime<us>() const;
-  template double TestBase::AwaitChange::getTime<ms>() const;
-
   void TestBase::AwaitChange::await_suspend(std::coroutine_handle<> h) {
     handle = h;
 
@@ -64,9 +50,7 @@ namespace test {
       return;
     }
     // ---- Persistent time + value storage for Questa (MUST be non-null) ----
-    callbackData->time.type = vpiSimTime;
-    callbackData->time.high = 0;
-    callbackData->time.low = 0;
+    detail::set_vpi_time_from_ticks(callbackData->time, 0);
 
     callbackData->vpi_value.format = vpiIntVal;
     callbackData->vpi_value.value.integer = 0;
@@ -137,17 +121,11 @@ namespace test {
     std::printf("[DBG] AwaitChange::await_resume enter, net='%s'\n", net.c_str());
 #endif
 
-    // Get current simulation time
-    const vpiHandle cbH = nullptr;
-    s_vpi_time tim{};
-    tim.type = vpiSimTime;
-    vpi_get_time(cbH, &tim);
-    rdTime = (static_cast<unsigned long long>(tim.high) << 32) |
-      static_cast<unsigned long long>(tim.low);
+    resume_time_ticks = detail::current_vpi_time_ticks();
 
 #ifdef RAPIDVPI_DEBUG
-    std::printf("[DBG] AwaitChange::await_resume: time=%llu\n",
-                static_cast<unsigned long long>(rdTime));
+    std::printf("[DBG] AwaitChange::await_resume: resume_time_ticks=%llu\n",
+                static_cast<unsigned long long>(resume_time_ticks));
 #endif
 
     // Read the value being changed

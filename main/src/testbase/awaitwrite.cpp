@@ -24,28 +24,12 @@
 #include <cstdio>
 
 namespace test {
-  template <TimeUnit T>
-  void TestBase::AwaitWrite::setDelay(const double delay) {
-    constexpr double factor = TimeUnitConversion<T>::factor;
-    double adjusted_delay = delay * factor / parent.sim_time_unit;
-    this->delay = static_cast<unsigned long long int>(adjusted_delay);
-  }
-
-  void TestBase::AwaitWrite::setDelay(const double delay) {
-    setDelay<ns>(delay);
-  }
-
-  template void TestBase::AwaitWrite::setDelay<ps>(const double);
-  template void TestBase::AwaitWrite::setDelay<ns>(const double);
-  template void TestBase::AwaitWrite::setDelay<us>(const double);
-  template void TestBase::AwaitWrite::setDelay<ms>(const double);
-
   void TestBase::AwaitWrite::await_suspend(std::coroutine_handle<> h) {
     handle = h;
 
 #ifdef RAPIDVPI_DEBUG
-    std::printf("[DBG] AwaitWrite::await_suspend enter, delay=%llu, handle=%p\n",
-                static_cast<unsigned long long>(delay),
+    std::printf("[DBG] AwaitWrite::await_suspend enter, delay_ticks=%llu, handle=%p\n",
+                static_cast<unsigned long long>(delay_ticks),
                 static_cast<void*>(handle.address()));
 #endif
 
@@ -55,9 +39,7 @@ namespace test {
     // Time for the delay is only needed at registration;
     // the simulator copies it, so stack lifetime is enough.
     s_vpi_time time{};
-    time.type = vpiSimTime;
-    time.high = 0;
-    time.low = static_cast<PLI_UINT32>(delay);
+    detail::set_vpi_time_from_ticks(time, delay_ticks);
 
     s_cb_data cb_data{};
     cb_data.reason = cbAfterDelay;
