@@ -1,25 +1,3 @@
-// MIT License
-
-// Copyright (c) 2026 Rovshan Rustamov
-
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-
-// The above copyright notice and this permission notice shall be included in all
-// copies or substantial portions of the Software.
-
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-// SOFTWARE.
-
 `default_nettype none
 
 // ----------------------------------------------------------------------------
@@ -40,10 +18,7 @@ module uart_rx #(
   // ================================================================
   // DEBUG CONTROL
   // ================================================================
-  parameter bit RTL_DBG         = 1'b0,
-  parameter bit RTL_DBG_TIME_NS = 1'b1,
-  parameter bit RTL_DBG_TIME_US = 1'b0,
-  parameter bit RTL_DBG_TIME_MS = 1'b0
+  parameter bit RTL_DBG = 1'b1
 ) (
   input  wire       clk,
   input  wire       rst_n,
@@ -99,24 +74,6 @@ module uart_rx #(
   logic                  event_rx_frame_error_q;
   logic                  event_rx_parity_error_q;
   logic                  event_rx_break_detect_q;
-
-`ifndef SYNTHESIS
-  localparam string RTL_DBG_TIMEUNIT_STR = RTL_DBG_TIME_MS ? "ms" :
-                                           RTL_DBG_TIME_US ? "us" :
-                                           RTL_DBG_TIME_NS ? "ns" : "ticks";
-
-  function automatic real rtl_dbg_time();
-    begin
-      if (RTL_DBG_TIME_MS) begin
-        rtl_dbg_time = $realtime / 1_000_000.0;
-      end else if (RTL_DBG_TIME_US) begin
-        rtl_dbg_time = $realtime / 1_000.0;
-      end else begin
-        rtl_dbg_time = $realtime;
-      end
-    end
-  endfunction
-`endif
 
   function automatic logic [3:0] decode_data_bits(input logic [1:0] data_bits);
     begin
@@ -219,9 +176,8 @@ module uart_rx #(
 `ifndef SYNTHESIS
               if (RTL_DBG) begin
                 `DPRINT($display(
-                  "[RTL][INFO][%0.0f %s] %m: RX start edge detected, data_bits=%0d stop_bits=%0d parity_mode=0x%0h",
-                  rtl_dbg_time(),
-                  RTL_DBG_TIMEUNIT_STR,
+                  "[RTL][INFO][%0t] %m: RX start edge detected, data_bits=%0d stop_bits=%0d parity_mode=0x%0h",
+                  $time,
                   decode_data_bits(cfg_data_bits),
                   decode_stop_bits(cfg_stop_bits),
                   cfg_parity_mode
@@ -244,9 +200,8 @@ module uart_rx #(
 `ifndef SYNTHESIS
                 if (RTL_DBG) begin
                   `DPRINT($display(
-                    "[RTL][WARN][%0.0f %s] %m: false RX start, mid-start sample returned high",
-                    rtl_dbg_time(),
-                    RTL_DBG_TIMEUNIT_STR
+                    "[RTL][WARN][%0t] %m: false RX start, mid-start sample returned high",
+                    $time
                   ));
                 end
 `endif
@@ -292,9 +247,8 @@ module uart_rx #(
               if (RTL_DBG &&
                   calc_parity_error(data_q, active_parity_mode_q, rx_sync_i)) begin
                 `DPRINT($display(
-                  "[RTL][WARN][%0.0f %s] %m: RX parity error, data=0x%02h parity_sample=%0b mode=0x%0h",
-                  rtl_dbg_time(),
-                  RTL_DBG_TIMEUNIT_STR,
+                  "[RTL][WARN][%0t] %m: RX parity error, data=0x%02h parity_sample=%0b mode=0x%0h",
+                  $time,
                   data_q,
                   rx_sync_i,
                   active_parity_mode_q
@@ -320,9 +274,8 @@ module uart_rx #(
 `ifndef SYNTHESIS
                 if (RTL_DBG && !stop_low_seen_q) begin
                   `DPRINT($display(
-                    "[RTL][WARN][%0.0f %s] %m: RX frame error, stop bit %0d sampled low",
-                    rtl_dbg_time(),
-                    RTL_DBG_TIMEUNIT_STR,
+                    "[RTL][WARN][%0t] %m: RX frame error, stop bit %0d sampled low",
+                    $time,
                     stop_bit_index_q
                   ));
                 end
@@ -354,9 +307,8 @@ module uart_rx #(
           if (RTL_DBG) begin
             if (frame_error_q || parity_error_q || break_detect_q) begin
               `DPRINT($display(
-                "[RTL][WARN][%0.0f %s] %m: RX character completed with status, data=0x%02h frame=%0b parity=%0b break=%0b",
-                rtl_dbg_time(),
-                RTL_DBG_TIMEUNIT_STR,
+                "[RTL][WARN][%0t] %m: RX character completed with status, data=0x%02h frame=%0b parity=%0b break=%0b",
+                $time,
                 data_q,
                 frame_error_q,
                 parity_error_q,
@@ -364,9 +316,8 @@ module uart_rx #(
               ));
             end else begin
               `DPRINT($display(
-                "[RTL][INFO][%0.0f %s] %m: RX character completed, data=0x%02h",
-                rtl_dbg_time(),
-                RTL_DBG_TIMEUNIT_STR,
+                "[RTL][INFO][%0t] %m: RX character completed, data=0x%02h",
+                $time,
                 data_q
               ));
             end

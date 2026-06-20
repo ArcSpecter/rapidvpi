@@ -1,32 +1,11 @@
-// MIT License
-
-// Copyright (c) 2026 Rovshan Rustamov
-
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-
-// The above copyright notice and this permission notice shall be included in all
-// copies or substantial portions of the Software.
-
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-// SOFTWARE.
-
 #include "vip_common/scoreboard/scoreboard.hpp"
 
 #include <sstream>
 
 namespace vip::common {
 
-Scoreboard::Scoreboard() {
+Scoreboard::Scoreboard(TestBase& tb)
+    : tb_(tb) {
     // default: WARN|FAIL
     reset_all();
     set_print_warnings_only();
@@ -45,8 +24,8 @@ void Scoreboard::reset_case() {
     case_active_ = false;
     case_name_.clear();
     case_index_ = total_cases_run_;
-    case_start_time_ns_ = -1.0;
-    case_end_time_ns_ = -1.0;
+    case_start_tick_ = INVALID_TICK;
+    case_end_tick_ = INVALID_TICK;
 
     case_info_count_ = 0;
     case_pass_count_ = 0;
@@ -56,17 +35,17 @@ void Scoreboard::reset_case() {
     case_events_.clear();
 }
 
-void Scoreboard::start_case(const std::string& case_name, const double time_ns) {
+void Scoreboard::start_case(const std::string& case_name, sim_tick_t time_tick) {
     reset_case();
     case_active_ = true;
     case_name_ = case_name;
-    case_start_time_ns_ = time_ns;
+    case_start_tick_ = valid_tick(time_tick) ? time_tick : sim_time_ticks();
 }
 
-void Scoreboard::end_case(const double time_ns) {
+void Scoreboard::end_case(sim_tick_t time_tick) {
     if (!case_active_) return;
 
-    case_end_time_ns_ = time_ns;
+    case_end_tick_ = valid_tick(time_tick) ? time_tick : sim_time_ticks();
     case_active_ = false;
 
     total_cases_run_++;
@@ -74,20 +53,20 @@ void Scoreboard::end_case(const double time_ns) {
     else total_cases_failed_++;
 }
 
-void Scoreboard::note_info(const std::string& msg, const double time_ns) {
-    push_event(Level::INFO, msg, time_ns);
+void Scoreboard::note_info(const std::string& msg, const sim_tick_t time_tick) {
+    push_event(Level::INFO, msg, time_tick);
 }
 
-void Scoreboard::note_pass(const std::string& msg, const double time_ns) {
-    push_event(Level::PASS, msg, time_ns);
+void Scoreboard::note_pass(const std::string& msg, const sim_tick_t time_tick) {
+    push_event(Level::PASS, msg, time_tick);
 }
 
-void Scoreboard::note_warn(const std::string& msg, const double time_ns) {
-    push_event(Level::WARN, msg, time_ns);
+void Scoreboard::note_warn(const std::string& msg, const sim_tick_t time_tick) {
+    push_event(Level::WARN, msg, time_tick);
 }
 
-void Scoreboard::note_fail(const std::string& msg, const double time_ns) {
-    push_event(Level::FAIL, msg, time_ns);
+void Scoreboard::note_fail(const std::string& msg, const sim_tick_t time_tick) {
+    push_event(Level::FAIL, msg, time_tick);
 }
 
 void Scoreboard::enable_print_info(const bool en) {
@@ -143,10 +122,10 @@ bool Scoreboard::should_print(const Level lvl) const {
     }
 }
 
-void Scoreboard::push_event(const Level lvl, const std::string& msg, const double time_ns) {
+void Scoreboard::push_event(const Level lvl, const std::string& msg, const sim_tick_t time_tick) {
     Event e;
     e.level = lvl;
-    e.time_ns = time_ns;
+    e.time_tick = time_tick;
     e.msg = msg;
     case_events_.push_back(e);
 
@@ -159,8 +138,8 @@ void Scoreboard::push_event(const Level lvl, const std::string& msg, const doubl
     }
 
     if (should_print(lvl)) {
-        if (time_ns >= 0.0) {
-            log_ << "[" << level_str(lvl) << "][" << static_cast<std::uint64_t>(time_ns) << "] " << msg << std::endl;
+        if (valid_tick(time_tick)) {
+            log_ << "[" << level_str(lvl) << "][tick=" << time_tick << "] " << msg << std::endl;
         }
         else {
             log_ << "[" << level_str(lvl) << "] " << msg << std::endl;
@@ -175,6 +154,13 @@ void Scoreboard::print_case_summary() const {
     oss << " pass=" << case_pass_count_;
     oss << " warn=" << case_warn_count_;
     oss << " fail=" << case_fail_count_;
+    if (valid_tick(case_start_tick_) && valid_tick(case_end_tick_)) {
+        const sim_tick_t delta = delta_ticks(case_start_tick_, case_end_tick_);
+        oss << " start_tick=" << case_start_tick_;
+        oss << " end_tick=" << case_end_tick_;
+        oss << " delta_ticks=" << delta;
+        oss << " delta_ns=" << format_ns(ticks_to_ns(tb_, delta));
+    }
     log_ << oss.str() << std::endl;
 }
 

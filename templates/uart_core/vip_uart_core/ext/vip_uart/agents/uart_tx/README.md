@@ -14,7 +14,7 @@
 `uart_core` RX-path test, this net is usually the DUT `uart_rx_i` pin.
 
 The agent supports 5 to 8 data bits, one or two stop bits, none/even/odd
-parity, configurable bit timing in testbench clock ticks, optional
+parity, configurable bit timing in testbench clock edges, optional
 phase-offset frame launch with baud-derived time delays, inter-frame gaps, bad
 parity injection, and bad stop-bit framing injection.
 
@@ -36,7 +36,7 @@ When `use_rts` or `set_respect_rts(port, true)` is enabled, the agent samples
 the configured RTS net before launching each new frame. It does not interrupt a
 frame already in progress, matching normal UART RTS behavior.
 
-`set_rts_wait_timeout_ticks()` can turn a stuck inactive RTS into a scoreboard
+`set_rts_wait_timeout_clks()` can turn a stuck inactive RTS into a scoreboard
 rule event.
 
 ## 4. Phase-offset launch
@@ -63,10 +63,10 @@ frame start needs an explicit phase offset.
 - `enqueue_byte_with_phase(port, data, baud_rate, phase_offset_ps)`
 - `enqueue_bytes_with_phase(port, data, baud_rate, initial_phase_offset_ps)`
 - `wait_done(ticket)`
-- `set_inter_frame_gap_ticks(port, ticks)`
+- `set_inter_frame_gap_clks(port, clks)`
 - `set_respect_rts(port, enable)`
 - `set_rts_active_low(port, active_low)`
-- `set_rts_wait_timeout_ticks(port, ticks)`
+- `set_rts_wait_timeout_clks(port, clks)`
 - `set_auto_expect(port, enable)`
 - `arm_next_framing_error(port)`
 - `arm_next_parity_error(port)`

@@ -1,25 +1,3 @@
-// MIT License
-
-// Copyright (c) 2026 Rovshan Rustamov
-
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-
-// The above copyright notice and this permission notice shall be included in all
-// copies or substantial portions of the Software.
-
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-// SOFTWARE.
-
 `default_nettype none
 
 // ----------------------------------------------------------------------------
@@ -41,10 +19,7 @@ module uart_baud_gen #(
   // ================================================================
   // DEBUG CONTROL
   // ================================================================
-  parameter bit RTL_DBG         = 1'b0,
-  parameter bit RTL_DBG_TIME_NS = 1'b1,
-  parameter bit RTL_DBG_TIME_US = 1'b0,
-  parameter bit RTL_DBG_TIME_MS = 1'b0
+  parameter bit RTL_DBG = 1'b1
 ) (
   input  wire                  clk,
   input  wire                  rst_n,
@@ -65,25 +40,9 @@ module uart_baud_gen #(
   logic                   baud_tick_q;
 
 `ifndef SYNTHESIS
-  localparam string RTL_DBG_TIMEUNIT_STR = RTL_DBG_TIME_MS ? "ms" :
-                                           RTL_DBG_TIME_US ? "us" :
-                                           RTL_DBG_TIME_NS ? "ns" : "ticks";
-
   logic                  dbg_cfg_enable_q;
   logic                  dbg_seen_enable_q;
   logic [BAUD_ACC_W-1:0] dbg_baud_inc_q;
-
-  function automatic real rtl_dbg_time();
-    begin
-      if (RTL_DBG_TIME_MS) begin
-        rtl_dbg_time = $realtime / 1_000_000.0;
-      end else if (RTL_DBG_TIME_US) begin
-        rtl_dbg_time = $realtime / 1_000.0;
-      end else begin
-        rtl_dbg_time = $realtime;
-      end
-    end
-  endfunction
 `endif
 
   assign baud_sum = {1'b0, baud_acc_q} + {1'b0, cfg_baud_inc};
@@ -128,9 +87,8 @@ module uart_baud_gen #(
       if (RTL_DBG) begin
         if (cfg_enable && !dbg_cfg_enable_q) begin
           `DPRINT($display(
-            "[RTL][INFO][%0.0f %s] %m: baud generator enabled, cfg_baud_inc=%0d, oversample=%0d",
-            rtl_dbg_time(),
-            RTL_DBG_TIMEUNIT_STR,
+            "[RTL][INFO][%0t] %m: baud generator enabled, cfg_baud_inc=%0d, oversample=%0d",
+            $time,
             cfg_baud_inc,
             OVERSAMPLE
           ));
@@ -138,17 +96,15 @@ module uart_baud_gen #(
 
         if (!cfg_enable && dbg_cfg_enable_q) begin
           `DPRINT($display(
-            "[RTL][INFO][%0.0f %s] %m: baud generator disabled and counters idled",
-            rtl_dbg_time(),
-            RTL_DBG_TIMEUNIT_STR
+            "[RTL][INFO][%0t] %m: baud generator disabled and counters idled",
+            $time
           ));
         end
 
         if (cfg_enable && dbg_seen_enable_q && (cfg_baud_inc != dbg_baud_inc_q)) begin
           `DPRINT($display(
-            "[RTL][WARN][%0.0f %s] %m: cfg_baud_inc changed while enabled, old=%0d new=%0d",
-            rtl_dbg_time(),
-            RTL_DBG_TIMEUNIT_STR,
+            "[RTL][WARN][%0t] %m: cfg_baud_inc changed while enabled, old=%0d new=%0d",
+            $time,
             dbg_baud_inc_q,
             cfg_baud_inc
           ));

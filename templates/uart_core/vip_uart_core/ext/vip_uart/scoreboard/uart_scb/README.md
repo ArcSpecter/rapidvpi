@@ -11,6 +11,8 @@
 `vip::uart::ScbUartStream` compares expected UART frames with observed frames
 per logical port.
 
+Observed frame event timestamps use raw simulator ticks from `UartFrame::end_tick`.
+
 Useful APIs:
 
 - `expect_byte(port, data)`

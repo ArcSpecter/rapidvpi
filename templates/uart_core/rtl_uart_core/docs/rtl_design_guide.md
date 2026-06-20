@@ -235,35 +235,29 @@ Do not rename it unless explicitly told to.
 
 ## 7.2 Standard debug parameters
 
-When debug support is requested, add these parameters to the module parameter list:
+When debug support is requested, add this parameter to the module parameter list:
 
 ```systemverilog
     // ================================================================
     // DEBUG CONTROL
     // ================================================================
-    parameter bit RTL_DBG         = 1'b0,
-    parameter bit RTL_DBG_TIME_NS = 1'b1,
-    parameter bit RTL_DBG_TIME_US = 1'b0,
-    parameter bit RTL_DBG_TIME_MS = 1'b0
+    parameter bit RTL_DBG = 1'b1
 ```
 
-These parameters must appear clearly in the module parameter list.
+This parameter must appear clearly in the module parameter list.
+It is the standardized RTL debug control parameter and gates simulation-only debug prints.
 
 ---
 
-## 7.3 Time helper expectation
+## 7.3 Debug time policy
 
-If the file uses debug prints with time formatting, provide appropriate local helpers such as:
-
-* a function `rtl_dbg_time()`
-* a string or equivalent named `RTL_DBG_TIMEUNIT_STR`
+RTL debug prints should use raw SystemVerilog simulator time through `$time` and print it as a bare numeric timestamp inside the third bracket.
 
 Intent:
 
-* `rtl_dbg_time()` returns current simulation time converted to the selected unit
-* `RTL_DBG_TIMEUNIT_STR` tells whether that unit is `"ns"`, `"us"`, or `"ms"`
-
-The exact helper implementation can vary, but the call pattern used in debug prints should remain consistent.
+* RTL debug is only local simulation breadcrumbs.
+* RapidVPI/VIP/runner/scoreboard code owns precise event timing, testcase timing, and formatted runtime summaries.
+* RTL prints should stay simple and should not duplicate the RapidVPI time-formatting policy.
 
 ---
 
@@ -275,9 +269,8 @@ When inserting debug prints, use this exact general pattern:
 `ifndef SYNTHESIS
                   if (RTL_DBG) begin
                     `DPRINT($display(
-                      "[RTL][WARN][%0.0f %s] gmii_rx_rs: ASSUME_STRIP saw non-preamble first byte 0x%02x, treating as DA",
-                      rtl_dbg_time(),
-                      RTL_DBG_TIMEUNIT_STR,
+                      "[RTL][WARN][%0t] gmii_rx_rs: ASSUME_STRIP saw non-preamble first byte 0x%02x, treating as DA",
+                      $time,
                       gmii_rxd
                     ));
                   end
@@ -289,6 +282,7 @@ Rules:
 * wrap debug prints with `` `ifndef SYNTHESIS ``
 * gate them with `if (RTL_DBG)`
 * invoke them using `` `DPRINT(...) ``
+* print simulator time as `[%0t]` using `$time`
 
 ### 7.5 Message style
 
@@ -302,9 +296,9 @@ Debug messages should be:
 Preferred general format:
 
 ```text
-[RTL][INFO][time unit] ...
-[RTL][WARN][time unit] ...
-[RTL][ERR ][time unit] ...
+[RTL][INFO][%0t] ...
+[RTL][WARN][%0t] ...
+[RTL][ERR ][%0t] ...
 ```
 
 ### 7.6 Where to add debug prints
@@ -371,7 +365,7 @@ Keep the file organized into clear sections, for example:
 
 * localparams / typedefs
 * internal signals
-* optional debug helpers
+* optional debug prints
 * combinational logic
 * sequential logic
 
@@ -406,10 +400,7 @@ module some_module #(
     // ================================================================
     // DEBUG CONTROL
     // ================================================================
-    parameter bit RTL_DBG         = 1'b0,
-    parameter bit RTL_DBG_TIME_NS = 1'b1,
-    parameter bit RTL_DBG_TIME_US = 1'b0,
-    parameter bit RTL_DBG_TIME_MS = 1'b0
+    parameter bit RTL_DBG = 1'b1
 ) (
   input  logic clk,
   input  logic rst_n,
@@ -425,7 +416,7 @@ module some_module #(
   // ================================================================
 
   // ================================================================
-  // OPTIONAL DEBUG HELPERS
+  // OPTIONAL DEBUG PRINTS
   // ================================================================
 
   // ================================================================
@@ -471,7 +462,7 @@ Any AI agent generating RTL in this style must follow these rules:
 7. Put `` `default_nettype none `` at the top of the file.
 8. Do **not** put `` `default_nettype wire `` at the end of the file.
 9. Keep RTL synthesizable unless explicitly asked for non-synthesizable additions.
-10. When debug capability is requested, use the exact standardized `DPRINT` macro header, the standard debug parameters, and the standard guarded debug print style shown above.
+10. When debug capability is requested, use the exact standardized `DPRINT` macro header, the single `RTL_DBG` debug parameter, and the standard guarded tick-only debug print style shown above.
 
 ---
 
@@ -515,6 +506,5 @@ This project RTL style is:
 * synchronous resets unless explicitly told otherwise
 * `` `default_nettype none `` at file top
 * no `` `default_nettype wire `` at file end
-* standardized optional debug infrastructure using `DPRINT`
+* standardized optional debug infrastructure using `DPRINT` with bare `$time` `[RTL]` prints
 
-If you want, I can next turn this into a repo-ready `RTL_DESIGN_GUIDE.md` text block.

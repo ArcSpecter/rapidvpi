@@ -94,10 +94,7 @@ module uart_core #(
   // ================================================================
   // DEBUG CONTROL
   // ================================================================
-  parameter bit RTL_DBG         = 1'b0, // Enables guarded RTL debug printouts in simulation
-  parameter bit RTL_DBG_TIME_NS = 1'b1, // Print debug timestamps in ns
-  parameter bit RTL_DBG_TIME_US = 1'b0, // Print debug timestamps in us
-  parameter bit RTL_DBG_TIME_MS = 1'b0  // Print debug timestamps in ms
+  parameter bit RTL_DBG = 1'b1 // Enables guarded RTL debug printouts in simulation
 ) (
   input  wire                                      clk,
   input  wire                                      rst_n,
@@ -177,7 +174,7 @@ Do not add public reset-default generics such as `BAUD_INC_RESET`, `PARITY_MODE_
 
 Do not add a public `CTS_SYNC_STAGES` generic. The CTS synchronizer depth is internal to `uart_hw_flow_ctrl.sv`; use a fixed conservative localparam there.
 
-The `RTL_DBG*` generics are simulation debug controls. `RTL_DBG=1` enables standardized `[RTL]` debug printouts at meaningful core events such as configuration changes, RX/TX character boundaries, FIFO clear/transfer/backpressure, RX overrun, and RTS/CTS state changes. These prints must be wrapped with the standard `DPRINT` macro and removed under `SYNTHESIS`. `uart_core.sv` must propagate the debug generics to all runtime helper modules.
+The `RTL_DBG` generic is the simulation debug control. `RTL_DBG=1` enables standardized `[RTL]` debug printouts at meaningful core events such as configuration changes, RX/TX character boundaries, FIFO clear/transfer/backpressure, RX overrun, and RTS/CTS state changes. These prints must be wrapped with the standard `DPRINT` macro, removed under `SYNTHESIS`, and use raw simulator ticks in the `[%0t]` field with `$time`. `uart_core.sv` must propagate `RTL_DBG` to all runtime helper modules.
 
 ---
 

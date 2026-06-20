@@ -1,25 +1,3 @@
-// MIT License
-
-// Copyright (c) 2026 Rovshan Rustamov
-
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-
-// The above copyright notice and this permission notice shall be included in all
-// copies or substantial portions of the Software.
-
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-// SOFTWARE.
-
 #include "tc_flow_ctrl.hpp"
 
 // DUT parameter requirements for this testcase:
@@ -50,7 +28,7 @@ namespace {
 static constexpr bool CTS_ACTIVE_LOW = true;
 static constexpr bool RTS_ACTIVE_LOW = true;
 static constexpr unsigned CTS_SYNC_SETTLE_CYCLES = 6u;
-static constexpr unsigned FLOW_STATUS_TIMEOUT_CYCLES = BASIC_UART_BIT_TICKS * 64u;
+static constexpr unsigned FLOW_STATUS_TIMEOUT_CYCLES = BASIC_UART_BIT_CLKS * 64u;
 static constexpr unsigned FLOW_RTS_DEASSERT_LEVEL = RX_FIFO_DEPTH - 2u;
 static constexpr unsigned FLOW_RTS_ASSERT_LEVEL = RX_FIFO_DEPTH / 2u;
 
@@ -88,7 +66,7 @@ TestBase::RunUserTask wait_cycles(Test& test, const unsigned cycles) {
 TestBase::RunUserTask sample_flow(Test& test, FlowSample& sample) {
     co_await test.core_intf.sample_status(sample.status);
 
-    auto r = test.getCoRead(0);
+    auto r = test.getCoRead();
     r.read(uart_rts_o);
     r.read(uart_tx_o);
     co_await r;
@@ -164,7 +142,7 @@ TestBase::RunUserTask drive_cts_active(Test& test, const bool active) {
     co_await test.uart_peer_rx.drive_cts_now(uart_tx_port_name, active);
     co_await wait_cycles(test, CTS_SYNC_SETTLE_CYCLES);
 
-    auto r = test.getCoRead(0);
+    auto r = test.getCoRead();
     r.read(uart_cts_i);
     co_await r;
     const bool physical = (r.getNum(uart_cts_i) & 1u) != 0u;
@@ -195,7 +173,7 @@ TestBase::RunUserTask apply_flow_config(Test& test,
 
 [[nodiscard]] unsigned tx_timeout_for(const vip::uart::UartParams& params,
                                       const std::size_t frames) {
-    return (params.frame_ticks() * static_cast<unsigned>(frames + 2u))
+    return (params.frame_clks() * static_cast<unsigned>(frames + 2u))
         + (HANDSHAKE_TIMEOUT_CYCLES * 4u);
 }
 
@@ -281,7 +259,7 @@ TestBase::RunUserTask send_rx_byte(Test& test,
                                    const vip::uart::UartParams& params) {
     const unsigned ticket = test.uart_peer_tx.enqueue_byte(uart_rx_port_name, data);
     co_await test.uart_peer_tx.wait_done(ticket);
-    co_await wait_cycles(test, params.bit_ticks * 4u);
+    co_await wait_cycles(test, params.bit_clks * 4u);
     co_return;
 }
 
@@ -371,7 +349,7 @@ TestBase::RunUserTask subcase_cfg_hw_flow_disable_ignores_cts(Test& test) {
     co_await wait_tx_frame_count(test, 1u, tx_timeout_for(params, 1u), "flow disabled TX");
     observe_tx_frames(test, observed_tx, 1u, "flow disabled TX");
     co_await wait_tx_done_delta(test, before, 1u, "flow disabled TX");
-    co_await test.core_intf.wait_tx_idle(params.frame_ticks() + HANDSHAKE_TIMEOUT_CYCLES);
+    co_await test.core_intf.wait_tx_idle(params.frame_clks() + HANDSHAKE_TIMEOUT_CYCLES);
 
     FlowSample sample{};
     co_await sample_flow(test, sample);
@@ -404,8 +382,8 @@ TestBase::RunUserTask subcase_cts_blocks_and_releases_tx(Test& test) {
                               "CTS blocked queued TX",
                               &sample);
     check_true(test, sample.status.tx_byte_ready, "CTS blocked queued TX: tx_byte_ready deasserted unexpectedly");
-    co_await verify_no_extra_tx_frames(test, 0u, params.bit_ticks * 4u, "CTS blocked queued TX");
-    co_await wait_tx_done_delta(test, before, 0u, "CTS blocked queued TX", params.bit_ticks * 4u);
+    co_await verify_no_extra_tx_frames(test, 0u, params.bit_clks * 4u, "CTS blocked queued TX");
+    co_await wait_tx_done_delta(test, before, 0u, "CTS blocked queued TX", params.bit_clks * 4u);
 
     log_subcase("CTS release allows blocked TX launch");
     std::size_t observed_tx = 0u;
@@ -419,7 +397,7 @@ TestBase::RunUserTask subcase_cts_blocks_and_releases_tx(Test& test) {
     co_await wait_tx_frame_count(test, 1u, tx_timeout_for(params, 1u), "CTS release TX");
     observe_tx_frames(test, observed_tx, 1u, "CTS release TX");
     co_await wait_tx_done_delta(test, before, 1u, "CTS release TX");
-    co_await test.core_intf.wait_tx_idle(params.frame_ticks() + HANDSHAKE_TIMEOUT_CYCLES);
+    co_await test.core_intf.wait_tx_idle(params.frame_clks() + HANDSHAKE_TIMEOUT_CYCLES);
     co_await wait_flow_status(test,
                               [](const FlowSample& s) {
                                   return s.status.tx_level == 0u
@@ -465,14 +443,14 @@ TestBase::RunUserTask subcase_cts_does_not_interrupt_active_tx(Test& test) {
     expect_cts_active(test, sample, false, "second TX blocked after first completion");
     co_await verify_no_extra_tx_frames(test,
                                        1u,
-                                       params.bit_ticks * 4u,
+                                       params.bit_clks * 4u,
                                        "second TX remains blocked");
 
     co_await drive_cts_active(test, true);
     co_await wait_tx_frame_count(test, 2u, tx_timeout_for(params, 1u), "second TX after CTS release");
     observe_tx_frames(test, observed_tx, 2u, "second TX after CTS release");
     co_await wait_tx_done_delta(test, before, 2u, "second TX after CTS release");
-    co_await test.core_intf.wait_tx_idle(params.frame_ticks() + HANDSHAKE_TIMEOUT_CYCLES);
+    co_await test.core_intf.wait_tx_idle(params.frame_clks() + HANDSHAKE_TIMEOUT_CYCLES);
     co_await wait_flow_status(test,
                               [](const FlowSample& s) {
                                   return s.status.tx_level == 0u
@@ -522,7 +500,7 @@ TestBase::RunUserTask subcase_cts_blocked_only_when_waiting(Test& test) {
                                       && !s.status.tx_busy;
                               },
                               "blocked byte cleared");
-    co_await verify_no_extra_tx_frames(test, 0u, make_uart_params().bit_ticks * 4u, "blocked byte cleared");
+    co_await verify_no_extra_tx_frames(test, 0u, make_uart_params().bit_clks * 4u, "blocked byte cleared");
     co_return;
 }
 
@@ -644,7 +622,7 @@ TestBase::RunUserTask subcase_rx_tx_independence(Test& test) {
     co_await wait_tx_frame_count(test, 1u, tx_timeout_for(params, 1u), "independence release CTS");
     observe_tx_frames(test, observed_tx, 1u, "independence release CTS");
     co_await wait_tx_done_delta(test, before, 1u, "independence release CTS");
-    co_await test.core_intf.wait_tx_idle(params.frame_ticks() + HANDSHAKE_TIMEOUT_CYCLES);
+    co_await test.core_intf.wait_tx_idle(params.frame_clks() + HANDSHAKE_TIMEOUT_CYCLES);
 
     co_await tc_local_reset(test);
     co_await apply_flow_config(test, true, true, true);
@@ -679,7 +657,6 @@ TestBase::RunUserTask subcase_rx_tx_independence(Test& test) {
 } // namespace
 
 TestBase::RunUserTask tc_flow_ctrl(Test& test) {
-    vip::common::log_line("tc_flow_ctrl", "INFO", "start");
 
     co_await subcase_reset_default_status(test);
     co_await subcase_cfg_hw_flow_disable_ignores_cts(test);
@@ -694,7 +671,6 @@ TestBase::RunUserTask tc_flow_ctrl(Test& test) {
         test.scb.note_pass("tc_flow_ctrl RTS/CTS behavior completed");
     }
 
-    vip::common::log_line("tc_flow_ctrl", "INFO", "end");
     co_return;
 }
 

@@ -1,25 +1,3 @@
-// MIT License
-
-// Copyright (c) 2026 Rovshan Rustamov
-
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-
-// The above copyright notice and this permission notice shall be included in all
-// copies or substantial portions of the Software.
-
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-// SOFTWARE.
-
 #include "tc_phase.hpp"
 
 // DUT parameter requirements for this testcase:
@@ -45,7 +23,7 @@ namespace test {
 namespace {
 
 static constexpr std::uint64_t PHASE_BAUD_RATE = BASIC_BAUD_RATE;
-static constexpr unsigned PHASE_STATUS_TIMEOUT_CYCLES = BASIC_UART_BIT_TICKS * 64u;
+static constexpr unsigned PHASE_STATUS_TIMEOUT_CYCLES = BASIC_UART_BIT_CLKS * 64u;
 
 void log_subcase(const std::string& name) {
     vip::common::log_line("tc_phase", "INFO", "subcase " + name);
@@ -153,7 +131,7 @@ TestBase::RunUserTask send_rx_byte_with_phase(Test& test,
                                                   PHASE_BAUD_RATE,
                                                   phase_offset_ps);
     co_await test.uart_peer_tx.wait_done(ticket);
-    co_await wait_cycles(test, params.bit_ticks * 4u);
+    co_await wait_cycles(test, params.bit_clks * 4u);
     co_return;
 }
 
@@ -167,7 +145,7 @@ TestBase::RunUserTask send_rx_bytes_with_initial_phase(Test& test,
                                                    PHASE_BAUD_RATE,
                                                    phase_offset_ps);
     co_await test.uart_peer_tx.wait_done(ticket);
-    co_await wait_cycles(test, params.bit_ticks * 4u);
+    co_await wait_cycles(test, params.bit_clks * 4u);
     co_return;
 }
 
@@ -351,7 +329,6 @@ TestBase::RunUserTask subcase_near_edge_recovery(Test& test) {
 } // namespace
 
 TestBase::RunUserTask tc_phase(Test& test) {
-    vip::common::log_line("tc_phase", "INFO", "start");
 
     co_await subcase_baseline_receive(test);
     co_await subcase_single_byte_phase_sweep(test);
@@ -364,7 +341,6 @@ TestBase::RunUserTask tc_phase(Test& test) {
         test.scb.note_pass("tc_phase RX phase-offset behavior completed");
     }
 
-    vip::common::log_line("tc_phase", "INFO", "end");
     co_return;
 }
 

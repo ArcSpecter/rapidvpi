@@ -1,25 +1,3 @@
-// MIT License
-
-// Copyright (c) 2026 Rovshan Rustamov
-
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-
-// The above copyright notice and this permission notice shall be included in all
-// copies or substantial portions of the Software.
-
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-// SOFTWARE.
-
 #include "tc_reset.hpp"
 
 // DUT parameter requirements for this testcase:
@@ -45,7 +23,7 @@ namespace {
 
 static constexpr unsigned RESET_LOW_CYCLES = 8u;
 static constexpr unsigned RESET_POST_RELEASE_CYCLES = 2u;
-static constexpr unsigned RESET_STATUS_TIMEOUT_CYCLES = BASIC_UART_BIT_TICKS * 64u;
+static constexpr unsigned RESET_STATUS_TIMEOUT_CYCLES = BASIC_UART_BIT_CLKS * 64u;
 static constexpr unsigned NO_STALE_RX_CYCLES = 12u;
 
 struct ResetSample {
@@ -74,7 +52,7 @@ TestBase::RunUserTask wait_cycles(Test& test, const unsigned cycles) {
 
 [[nodiscard]] unsigned tx_timeout_for(const vip::uart::UartParams& params,
                                       const std::size_t frames) {
-    return (params.frame_ticks() * static_cast<unsigned>(frames + 2u))
+    return (params.frame_clks() * static_cast<unsigned>(frames + 2u))
         + (HANDSHAKE_TIMEOUT_CYCLES * 4u);
 }
 
@@ -110,7 +88,7 @@ void set_tx_monitor_strict(Test& test, const bool enable) {
 TestBase::RunUserTask drive_reset_asserted(Test& test, const bool asserted) {
     co_await test.utils.clock_to_write(1, 0);
 
-    auto w = test.getCoWrite(0);
+    auto w = test.getCoWrite();
     w.write(rst_n, asserted ? 0 : 1);
     co_await w;
     co_return;
@@ -136,7 +114,7 @@ TestBase::RunUserTask reset_and_reapply_config(Test& test,
 TestBase::RunUserTask sample_reset(Test& test, ResetSample& sample) {
     co_await test.core_intf.sample_status(sample.status);
 
-    auto r = test.getCoRead(0);
+    auto r = test.getCoRead();
     r.read(rst_n);
     r.read(uart_tx_o);
     r.read(uart_rx_i);
@@ -278,7 +256,7 @@ TestBase::RunUserTask send_rx_byte(Test& test,
                                    const vip::uart::UartParams& params) {
     const unsigned ticket = test.uart_peer_tx.enqueue_byte(uart_rx_port_name, data);
     co_await test.uart_peer_tx.wait_done(ticket);
-    co_await wait_cycles(test, params.bit_ticks * 4u);
+    co_await wait_cycles(test, params.bit_clks * 4u);
     co_return;
 }
 
@@ -395,7 +373,7 @@ TestBase::RunUserTask check_uart_tx_idle_high_for(Test& test,
                                                   const unsigned cycles,
                                                   std::string label) {
     for (unsigned cycle = 0u; cycle < cycles; ++cycle) {
-        auto r = test.getCoRead(0);
+        auto r = test.getCoRead();
         r.read(uart_tx_o);
         co_await r;
         if ((r.getNum(uart_tx_o) & 1u) == 0u) {
@@ -456,7 +434,7 @@ TestBase::RunUserTask send_tx_expect(Test& test,
     co_await wait_tx_frame_count(test, 1u, tx_timeout_for(params, 1u), label);
     observe_tx_frames(test, observed_tx, 1u, label);
     co_await wait_tx_done_delta(test, before, 1u, label);
-    co_await test.core_intf.wait_tx_idle(params.frame_ticks() + HANDSHAKE_TIMEOUT_CYCLES);
+    co_await test.core_intf.wait_tx_idle(params.frame_clks() + HANDSHAKE_TIMEOUT_CYCLES);
     co_return;
 }
 
@@ -517,11 +495,11 @@ TestBase::RunUserTask subcase_reset_with_nonempty_tx_fifo(Test& test) {
     const UartCoreEventCounts after_reset = test.core_intf.event_counts();
     co_await verify_no_extra_tx_frames(test,
                                        0u,
-                                       params.frame_ticks() * 2u,
+                                       params.frame_clks() * 2u,
                                        "non-empty TX FIFO post-reset");
     co_await verify_no_event_delta(test,
                                    after_reset,
-                                   params.frame_ticks() * 2u,
+                                   params.frame_clks() * 2u,
                                    "non-empty TX FIFO post-reset");
 
     co_await send_tx_expect(test, 0x77u, params, "non-empty TX FIFO recovery TX");
@@ -555,8 +533,8 @@ TestBase::RunUserTask subcase_reset_while_tx_active(Test& test) {
     co_await expect_reset_idle_state(test, "active TX post-reset");
 
     const UartCoreEventCounts after_reset = test.core_intf.event_counts();
-    co_await check_uart_tx_idle_high_for(test, params.frame_ticks(), "active TX abort post-reset");
-    co_await verify_no_event_delta(test, after_reset, params.frame_ticks(), "active TX abort post-reset");
+    co_await check_uart_tx_idle_high_for(test, params.frame_clks(), "active TX abort post-reset");
+    co_await verify_no_event_delta(test, after_reset, params.frame_clks(), "active TX abort post-reset");
 
     test.scb_uart_stream.reset_case();
     test.scb_uart_stream.set_strict_status_compare(true);
@@ -586,13 +564,13 @@ TestBase::RunUserTask subcase_reset_while_rx_active(Test& test) {
     check_true(test, !during_reset.status.rx_busy, "active RX: rx_busy did not clear during reset");
 
     co_await test.uart_peer_tx.wait_done(ticket);
-    co_await wait_cycles(test, params.bit_ticks * 2u);
+    co_await wait_cycles(test, params.bit_clks * 2u);
     co_await release_reset_and_reapply_config(test);
     co_await expect_reset_idle_state(test, "active RX post-reset");
 
     const UartCoreEventCounts after_reset = test.core_intf.event_counts();
     co_await verify_no_rx_record_for(test, NO_STALE_RX_CYCLES, "active RX post-reset");
-    co_await verify_no_event_delta(test, after_reset, params.frame_ticks(), "active RX post-reset");
+    co_await verify_no_event_delta(test, after_reset, params.frame_clks(), "active RX post-reset");
 
     co_await send_rx_byte(test, 0x6au, params);
     co_await pop_rx_expect(test, 0x6au, "active RX recovery RX");
@@ -616,7 +594,7 @@ TestBase::RunUserTask subcase_reset_during_rx_low_condition(Test& test) {
     co_await drive_reset_asserted(test, true);
     co_await wait_cycles(test, 2u);
     co_await test.uart_peer_tx.wait_done(ticket);
-    co_await wait_cycles(test, params.bit_ticks * 2u);
+    co_await wait_cycles(test, params.bit_clks * 2u);
 
     ResetSample line_idle{};
     co_await sample_reset(test, line_idle);
@@ -627,7 +605,7 @@ TestBase::RunUserTask subcase_reset_during_rx_low_condition(Test& test) {
 
     const UartCoreEventCounts after_reset = test.core_intf.event_counts();
     co_await verify_no_rx_record_for(test, NO_STALE_RX_CYCLES, "RX low/start-like post-reset");
-    co_await verify_no_event_delta(test, after_reset, params.frame_ticks(), "RX low/start-like post-reset");
+    co_await verify_no_event_delta(test, after_reset, params.frame_clks(), "RX low/start-like post-reset");
 
     co_await send_rx_byte(test, 0x99u, params);
     co_await pop_rx_expect(test, 0x99u, "RX low/start-like recovery RX");
@@ -666,7 +644,6 @@ TestBase::RunUserTask subcase_repeated_reset_recovery(Test& test) {
 } // namespace
 
 TestBase::RunUserTask tc_reset(Test& test) {
-    vip::common::log_line("tc_reset", "INFO", "start");
 
     co_await subcase_reset_while_idle(test);
     co_await subcase_reset_with_nonempty_rx_fifo(test);
@@ -680,7 +657,6 @@ TestBase::RunUserTask tc_reset(Test& test) {
         test.scb.note_pass("tc_reset reset behavior completed");
     }
 
-    vip::common::log_line("tc_reset", "INFO", "end");
     co_return;
 }
 

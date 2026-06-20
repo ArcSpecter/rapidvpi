@@ -1,25 +1,3 @@
-// MIT License
-
-// Copyright (c) 2026 Rovshan Rustamov
-
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-
-// The above copyright notice and this permission notice shall be included in all
-// copies or substantial portions of the Software.
-
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-// SOFTWARE.
-
 #include "vip_uart/agents/uart_tx/tx.hpp"
 
 #include <stdexcept>
@@ -198,7 +176,7 @@ UartTx::RunUserTask UartTx::wait_done(const unsigned ticket) {
     }
 
     while (!is_done(ticket)) {
-        co_await wait_ticks_(params_.idle_poll_ticks);
+        co_await wait_clks_(params_.idle_poll_clks);
     }
     co_return;
 }
@@ -212,8 +190,8 @@ std::size_t UartTx::pending_count(const std::string& port) const {
     return port_(port).pending.size();
 }
 
-void UartTx::set_inter_frame_gap_ticks(const std::string& port, const unsigned ticks) {
-    port_(port).inter_frame_gap_ticks = ticks;
+void UartTx::set_inter_frame_gap_clks(const std::string& port, const unsigned clks) {
+    port_(port).inter_frame_gap_clks = clks;
 }
 
 void UartTx::set_respect_rts(const std::string& port, const bool en) {
@@ -229,8 +207,8 @@ void UartTx::set_rts_active_low(const std::string& port, const bool active_low) 
     port_(port).cfg.rts_active_low = active_low;
 }
 
-void UartTx::set_rts_wait_timeout_ticks(const std::string& port, const unsigned ticks) {
-    port_(port).rts_wait_timeout_ticks = ticks;
+void UartTx::set_rts_wait_timeout_clks(const std::string& port, const unsigned clks) {
+    port_(port).rts_wait_timeout_clks = clks;
 }
 
 void UartTx::arm_next_framing_error(const std::string& port) {

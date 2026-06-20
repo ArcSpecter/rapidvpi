@@ -1,25 +1,3 @@
-// MIT License
-
-// Copyright (c) 2026 Rovshan Rustamov
-
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-
-// The above copyright notice and this permission notice shall be included in all
-// copies or substantial portions of the Software.
-
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-// SOFTWARE.
-
 `default_nettype none
 
 // ----------------------------------------------------------------------------
@@ -41,10 +19,7 @@ module uart_byte_fifo #(
   // ================================================================
   // DEBUG CONTROL
   // ================================================================
-  parameter bit RTL_DBG         = 1'b0,
-  parameter bit RTL_DBG_TIME_NS = 1'b1,
-  parameter bit RTL_DBG_TIME_US = 1'b0,
-  parameter bit RTL_DBG_TIME_MS = 1'b0
+  parameter bit RTL_DBG = 1'b1
 ) (
   input  wire                             clk,
   input  wire                             rst_n,
@@ -72,23 +47,7 @@ module uart_byte_fifo #(
   logic pop_fire;
 
 `ifndef SYNTHESIS
-  localparam string RTL_DBG_TIMEUNIT_STR = RTL_DBG_TIME_MS ? "ms" :
-                                           RTL_DBG_TIME_US ? "us" :
-                                           RTL_DBG_TIME_NS ? "ns" : "ticks";
-
   logic dbg_push_blocked_q;
-
-  function automatic real rtl_dbg_time();
-    begin
-      if (RTL_DBG_TIME_MS) begin
-        rtl_dbg_time = $realtime / 1_000_000.0;
-      end else if (RTL_DBG_TIME_US) begin
-        rtl_dbg_time = $realtime / 1_000.0;
-      end else begin
-        rtl_dbg_time = $realtime;
-      end
-    end
-  endfunction
 `endif
 
   assign empty = (level_q == '0);
@@ -154,17 +113,15 @@ module uart_byte_fifo #(
       if (RTL_DBG) begin
         if (clear) begin
           `DPRINT($display(
-            "[RTL][INFO][%0.0f %s] %m: FIFO clear, level_before=%0d",
-            rtl_dbg_time(),
-            RTL_DBG_TIMEUNIT_STR,
+            "[RTL][INFO][%0t] %m: FIFO clear, level_before=%0d",
+            $time,
             level_q
           ));
         end else begin
           if (push_valid && !push_ready && !dbg_push_blocked_q) begin
             `DPRINT($display(
-              "[RTL][WARN][%0.0f %s] %m: FIFO push blocked, level=%0d depth=%0d data=0x%0h",
-              rtl_dbg_time(),
-              RTL_DBG_TIMEUNIT_STR,
+              "[RTL][WARN][%0t] %m: FIFO push blocked, level=%0d depth=%0d data=0x%0h",
+              $time,
               level_q,
               DEPTH,
               push_data
@@ -173,35 +130,31 @@ module uart_byte_fifo #(
 
           if (!(push_valid && !push_ready) && dbg_push_blocked_q) begin
             `DPRINT($display(
-              "[RTL][INFO][%0.0f %s] %m: FIFO push unblocked, level=%0d",
-              rtl_dbg_time(),
-              RTL_DBG_TIMEUNIT_STR,
+              "[RTL][INFO][%0t] %m: FIFO push unblocked, level=%0d",
+              $time,
               level_q
             ));
           end
 
           if (push_fire && pop_fire) begin
             `DPRINT($display(
-              "[RTL][INFO][%0.0f %s] %m: FIFO push/pop, level_before=%0d push_data=0x%0h pop_data=0x%0h",
-              rtl_dbg_time(),
-              RTL_DBG_TIMEUNIT_STR,
+              "[RTL][INFO][%0t] %m: FIFO push/pop, level_before=%0d push_data=0x%0h pop_data=0x%0h",
+              $time,
               level_q,
               push_data,
               pop_data
             ));
           end else if (push_fire) begin
             `DPRINT($display(
-              "[RTL][INFO][%0.0f %s] %m: FIFO push, level_before=%0d data=0x%0h",
-              rtl_dbg_time(),
-              RTL_DBG_TIMEUNIT_STR,
+              "[RTL][INFO][%0t] %m: FIFO push, level_before=%0d data=0x%0h",
+              $time,
               level_q,
               push_data
             ));
           end else if (pop_fire) begin
             `DPRINT($display(
-              "[RTL][INFO][%0.0f %s] %m: FIFO pop, level_before=%0d data=0x%0h",
-              rtl_dbg_time(),
-              RTL_DBG_TIMEUNIT_STR,
+              "[RTL][INFO][%0t] %m: FIFO pop, level_before=%0d data=0x%0h",
+              $time,
               level_q,
               pop_data
             ));

@@ -1,25 +1,3 @@
-// MIT License
-
-// Copyright (c) 2026 Rovshan Rustamov
-
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-
-// The above copyright notice and this permission notice shall be included in all
-// copies or substantial portions of the Software.
-
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-// SOFTWARE.
-
 #include "tc_fifo.hpp"
 
 #include <algorithm>
@@ -37,7 +15,7 @@
 namespace test {
 namespace {
 
-static constexpr unsigned FIFO_STATUS_TIMEOUT_CYCLES = BASIC_UART_BIT_TICKS * 32u;
+static constexpr unsigned FIFO_STATUS_TIMEOUT_CYCLES = BASIC_UART_BIT_CLKS * 32u;
 static constexpr unsigned SHORT_READY_TIMEOUT_CYCLES = 8u;
 
 void log_subcase(const std::string& name) {
@@ -62,7 +40,7 @@ void check_true(Test& test, const bool condition, const std::string& msg) {
 
 [[nodiscard]] unsigned tx_timeout_for(const vip::uart::UartParams& params,
                                       const std::size_t frames) {
-    return (params.frame_ticks() * static_cast<unsigned>(frames + 2u))
+    return (params.frame_clks() * static_cast<unsigned>(frames + 2u))
         + (HANDSHAKE_TIMEOUT_CYCLES * 4u);
 }
 
@@ -199,7 +177,7 @@ TestBase::RunUserTask send_rx_byte_to_fifo(Test& test,
                                            const vip::uart::UartParams& params) {
     const unsigned ticket = test.uart_peer_tx.enqueue_byte(uart_rx_port_name, data);
     co_await test.uart_peer_tx.wait_done(ticket);
-    co_await wait_cycles(test, params.bit_ticks * 4u);
+    co_await wait_cycles(test, params.bit_clks * 4u);
     co_return;
 }
 
@@ -476,7 +454,7 @@ TestBase::RunUserTask subcase_tx_clear_idle(Test& test) {
     co_await apply_fifo_config(test, true, true);
     co_await verify_no_extra_tx_frames(test,
                                        0u,
-                                       params.frame_ticks() * 2u,
+                                       params.frame_clks() * 2u,
                                        "TX idle clear");
     check_true(test,
                test.core_intf.event_counts().tx_done == before.tx_done,
@@ -509,7 +487,7 @@ TestBase::RunUserTask subcase_tx_clear_active(Test& test) {
     observe_tx_history(test, active_only.size(), "TX active clear");
     co_await verify_no_extra_tx_frames(test,
                                        active_only.size(),
-                                       params.frame_ticks() * 2u,
+                                       params.frame_clks() * 2u,
                                        "TX active clear");
 
     co_await test.core_intf.wait_tx_idle();
@@ -539,7 +517,7 @@ TestBase::RunUserTask subcase_parallel_rx_fill_tx_drain(Test& test) {
     co_await apply_fifo_config(test, true, true);
 
     co_await test.uart_peer_tx.wait_done(rx_ticket);
-    co_await wait_cycles(test, params.bit_ticks * 4u);
+    co_await wait_cycles(test, params.bit_clks * 4u);
     co_await wait_rx_fifo_status(test, rx_data.size(), false, false, "parallel RX fill");
 
     bool observed = false;
@@ -623,7 +601,7 @@ TestBase::RunUserTask subcase_cross_clear_independence(Test& test) {
     co_await apply_fifo_config(test, true, true);
     co_await verify_no_extra_tx_frames(test,
                                        0u,
-                                       params.frame_ticks() * 2u,
+                                       params.frame_clks() * 2u,
                                        "cross-clear TX clear");
     check_true(test,
                test.core_intf.event_counts().tx_done == before.tx_done,
@@ -641,7 +619,6 @@ TestBase::RunUserTask subcase_cross_clear_independence(Test& test) {
 } // namespace
 
 TestBase::RunUserTask tc_fifo(Test& test) {
-    vip::common::log_line("tc_fifo", "INFO", "start");
 
     co_await subcase_reset_fifo_status(test);
     co_await subcase_rx_fill_full(test);
@@ -658,7 +635,6 @@ TestBase::RunUserTask tc_fifo(Test& test) {
         test.scb.note_pass("tc_fifo FIFO behavior completed");
     }
 
-    vip::common::log_line("tc_fifo", "INFO", "end");
     co_return;
 }
 

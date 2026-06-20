@@ -1,25 +1,3 @@
-// MIT License
-
-// Copyright (c) 2026 Rovshan Rustamov
-
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-
-// The above copyright notice and this permission notice shall be included in all
-// copies or substantial portions of the Software.
-
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-// SOFTWARE.
-
 #include "vip_uart/agents/uart_rx/rx.hpp"
 
 #include "vip_common/common/logger.hpp"
@@ -40,14 +18,14 @@ UartRx::RunTask UartRx::agent(const unsigned idx) {
         bool in_reset = false;
         co_await reset_asserted_(in_reset);
         if (in_reset) {
-            co_await wait_ticks_(params_.idle_poll_ticks);
+            co_await wait_clks_(params_.idle_poll_clks);
             continue;
         }
 
         bool line = params_.idle_high;
         co_await sample_line_(port, line);
         if (line == params_.idle_high) {
-            co_await wait_ticks_(params_.idle_poll_ticks);
+            co_await wait_clks_(params_.idle_poll_clks);
             continue;
         }
 
@@ -76,17 +54,22 @@ UartRx::RunTask UartRx::agent(const unsigned idx) {
     co_return;
 }
 
-UartRx::RunUserTask UartRx::wait_ticks_(const unsigned ticks) {
-    const unsigned n = ticks == 0u ? 1u : ticks;
+UartRx::RunUserTask UartRx::wait_clks_(const unsigned clks) {
+    const unsigned n = clks == 0u ? 1u : clks;
     co_await utils_.clock(static_cast<int>(n), 1);
     co_return;
 }
 
-UartRx::RunUserTask UartRx::sample_line_(PortState& port, bool& value) {
-    auto r = tb_.getCoRead(0);
+UartRx::RunUserTask UartRx::sample_line_(PortState& port,
+                                         bool& value,
+                                         test::sim_tick_t* time_tick) {
+    auto r = tb_.getCoRead();
     r.read(port.cfg.rx_net);
     co_await r;
     value = (r.getNum(port.cfg.rx_net) & 1u) != 0u;
+    if (time_tick != nullptr) {
+        *time_tick = r.getTime<test::ticks>();
+    }
     co_return;
 }
 
@@ -96,7 +79,7 @@ UartRx::RunUserTask UartRx::reset_asserted_(bool& asserted) {
         co_return;
     }
 
-    auto r = tb_.getCoRead(0);
+    auto r = tb_.getCoRead();
     r.read(reset_net_);
     co_await r;
     const bool rst_value = (r.getNum(reset_net_) & 1u) != 0u;
@@ -110,7 +93,7 @@ UartRx::RunUserTask UartRx::drive_cts_(PortState& port) {
     }
 
     const bool physical = active_to_physical(port.cts_active, port.cfg.cts_active_low);
-    auto w = tb_.getCoWrite(0);
+    auto w = tb_.getCoWrite();
     w.write(port.cfg.cts_net, physical ? 1 : 0);
     co_await w;
 
@@ -121,7 +104,6 @@ UartRx::RunUserTask UartRx::drive_cts_(PortState& port) {
 }
 
 UartRx::RunUserTask UartRx::capture_frame_(PortState& port, UartFrame& frame) {
-    frame.start_time_ns = static_cast<double>(vip::common::sim_time_ns());
     frame.data_bits = params_.data_bits;
     frame.stop_bits = params_.stop_bits;
     frame.parity = params_.parity;
@@ -129,17 +111,19 @@ UartRx::RunUserTask UartRx::capture_frame_(PortState& port, UartFrame& frame) {
     const bool start_level = !params_.idle_high;
     const bool stop_level = params_.idle_high;
 
-    co_await wait_ticks_(params_.sample_tick);
+    co_await wait_clks_(params_.sample_clk_index);
 
     bool start_sample = stop_level;
-    co_await sample_line_(port, start_sample);
+    test::sim_tick_t sample_time_tick = vip::common::INVALID_TICK;
+    co_await sample_line_(port, start_sample, &sample_time_tick);
+    frame.start_tick = sample_time_tick;
     if (start_sample != start_level) {
         frame.framing_error = true;
     }
 
     std::uint8_t data = 0u;
     for (unsigned bit = 0u; bit < params_.data_bits; ++bit) {
-        co_await wait_ticks_(params_.bit_ticks);
+        co_await wait_clks_(params_.bit_clks);
         bool sample = false;
         co_await sample_line_(port, sample);
 
@@ -151,7 +135,7 @@ UartRx::RunUserTask UartRx::capture_frame_(PortState& port, UartFrame& frame) {
     frame.data = static_cast<std::uint8_t>(data & params_.data_mask());
 
     if (params_.parity_enable()) {
-        co_await wait_ticks_(params_.bit_ticks);
+        co_await wait_clks_(params_.bit_clks);
         bool parity_sample = false;
         co_await sample_line_(port, parity_sample);
         const bool expected = uart_parity_bit(frame.data, params_);
@@ -160,9 +144,9 @@ UartRx::RunUserTask UartRx::capture_frame_(PortState& port, UartFrame& frame) {
 
     bool all_stop_low = true;
     for (unsigned stop = 0u; stop < params_.stop_bits; ++stop) {
-        co_await wait_ticks_(params_.bit_ticks);
+        co_await wait_clks_(params_.bit_clks);
         bool stop_sample = false;
-        co_await sample_line_(port, stop_sample);
+        co_await sample_line_(port, stop_sample, &sample_time_tick);
         if (stop_sample != stop_level) {
             frame.framing_error = true;
         }
@@ -172,7 +156,7 @@ UartRx::RunUserTask UartRx::capture_frame_(PortState& port, UartFrame& frame) {
     frame.break_detect = frame.framing_error
         && frame.data == 0u
         && all_stop_low;
-    frame.end_time_ns = static_cast<double>(vip::common::sim_time_ns());
+    frame.end_tick = sample_time_tick;
     co_return;
 }
 

@@ -2,7 +2,19 @@
 
 This document defines the default architecture for creating any reusable `vip_xxx` package in the RapidVPI/C++ coroutine ecosystem.
 
-The goal is that a new VIP can be created from this guide without copying another `vip_xxx` repository as a reference. Existing VIPs such as `vip_axi`, `vip_axil`, `vip_axis`, `vip_mdio`, or `vip_eth` may still be inspected when available, but they are examples only. This guide is the policy source.
+The goal is that a new VIP can be created from this guide without copying another `vip_xxx` repository as a reference and without forcing an AI agent to inspect `/usr/local/include/rapidvpi` or RapidVPI source files. Existing VIPs such as `vip_axi`, `vip_axil`, `vip_axis`, `vip_mdio`, `vip_eth`, or `vip_uart` may still be inspected when available, but they are examples only. This guide is the policy source.
+
+This version reflects the current RapidVPI time API after the explicit unit refactor:
+
+```cpp
+rd.getTime<ticks>();
+rd.getTime<ns>();
+test.getCoWrite();
+test.getCoWrite<ns>(10.0);
+test.getCoWrite<ticks>(10000);
+```
+
+Do not use old implicit-nanosecond forms such as `getCoWrite(0)`, `getCoRead(0)`, `getCoWrite(10.0)`, or `rd.getTime()`.
 
 ---
 
@@ -10,33 +22,53 @@ The goal is that a new VIP can be created from this guide without copying anothe
 
 - [1. Scope and intent](#1-scope-and-intent)
 - [2. Core design principles](#2-core-design-principles)
-- [3. Standard repository layout](#3-standard-repository-layout)
-- [4. CMake integration model](#4-cmake-integration-model)
-- [5. Namespaces, file naming, and public headers](#5-namespaces-file-naming-and-public-headers)
-- [6. Protocol parameter objects](#6-protocol-parameter-objects)
-- [7. Agent architecture](#7-agent-architecture)
-  - [7.1 Master or initiator agents](#71-master-or-initiator-agents)
-  - [7.2 Slave or responder agents](#72-slave-or-responder-agents)
-  - [7.3 Monitor-only agents](#73-monitor-only-agents)
-  - [7.4 Serial or pin-level protocol agents](#74-serial-or-pin-level-protocol-agents)
-  - [7.5 Combined convenience agents](#75-combined-convenience-agents)
-- [8. Scoreboard architecture](#8-scoreboard-architecture)
-  - [8.1 Functional scoreboards](#81-functional-scoreboards)
-  - [8.2 Rules scoreboards](#82-rules-scoreboards)
-  - [8.3 Local DUT-specific scoreboards](#83-local-dut-specific-scoreboards)
-- [9. Testcase architecture](#9-testcase-architecture)
-- [10. RapidVPI phase discipline](#10-rapidvpi-phase-discipline)
-- [11. Valid-ready and sampled-handshake discipline](#11-valid-ready-and-sampled-handshake-discipline)
-- [12. Wide-vector and packed-field policy](#12-wide-vector-and-packed-field-policy)
-- [13. Configuration knobs and additive evolution](#13-configuration-knobs-and-additive-evolution)
-- [14. Error injection, backpressure, timing, and stress hooks](#14-error-injection-backpressure-timing-and-stress-hooks)
-- [15. Memory models and protocol data models](#15-memory-models-and-protocol-data-models)
-- [16. Logging, tracing, and debug controls](#16-logging-tracing-and-debug-controls)
-- [17. Reset, lifecycle, and runner hooks](#17-reset-lifecycle-and-runner-hooks)
-- [18. Documentation requirements](#18-documentation-requirements)
-- [19. Creation checklist for a new `vip_xxx`](#19-creation-checklist-for-a-new-vip_xxx)
-- [20. Example target shape for `vip_uart`](#20-example-target-shape-for-vip_uart)
-- [21. Anti-patterns](#21-anti-patterns)
+- [3. RapidVPI public API reference](#3-rapidvpi-public-api-reference)
+  - [3.1 Include model and namespace](#31-include-model-and-namespace)
+  - [3.2 Time units and raw simulator ticks](#32-time-units-and-raw-simulator-ticks)
+  - [3.3 `TestBase` lifecycle and net registration](#33-testbase-lifecycle-and-net-registration)
+  - [3.4 `RunTask` and `RunUserTask`](#34-runtask-and-runusertask)
+  - [3.5 Write awaitable: `getCoWrite`](#35-write-awaitable-getcowrite)
+  - [3.6 Read awaitable: `getCoRead`](#36-read-awaitable-getcoread)
+  - [3.7 Change awaitable: `getCoChange`](#37-change-awaitable-getcochange)
+  - [3.8 Value conversion helpers](#38-value-conversion-helpers)
+  - [3.9 Test registration and factory registration](#39-test-registration-and-factory-registration)
+  - [3.10 RapidVPI API cheat sheet](#310-rapidvpi-api-cheat-sheet)
+- [4. Time, timestamps, logging, and scoreboard policy](#4-time-timestamps-logging-and-scoreboard-policy)
+  - [4.1 Timestamp rule: ticks are the default truth](#41-timestamp-rule-ticks-are-the-default-truth)
+  - [4.2 Delay rule: explicit human units for intended time delays](#42-delay-rule-explicit-human-units-for-intended-time-delays)
+  - [4.3 When to use `getTime<ticks>()`](#43-when-to-use-gettimeticks)
+  - [4.4 When to use `getTime<ns>()`, `getTime<us>()`, or `getTime<ms>()`](#44-when-to-use-gettimens-gettimeus-or-gettimems)
+  - [4.5 Runner-level and generic print timestamps](#45-runner-level-and-generic-print-timestamps)
+  - [4.6 Scoreboard timestamp policy](#46-scoreboard-timestamp-policy)
+  - [4.7 Simulator time precision metadata](#47-simulator-time-precision-metadata)
+  - [4.8 Do not recreate RapidVPI time conversion in VIPs](#48-do-not-recreate-rapidvpi-time-conversion-in-vips)
+- [5. Standard repository layout](#5-standard-repository-layout)
+- [6. CMake integration model](#6-cmake-integration-model)
+- [7. Namespaces, file naming, and public headers](#7-namespaces-file-naming-and-public-headers)
+- [8. Protocol parameter objects](#8-protocol-parameter-objects)
+- [9. Agent architecture](#9-agent-architecture)
+  - [9.1 Master or initiator agents](#91-master-or-initiator-agents)
+  - [9.2 Slave or responder agents](#92-slave-or-responder-agents)
+  - [9.3 Monitor-only agents](#93-monitor-only-agents)
+  - [9.4 Serial or pin-level protocol agents](#94-serial-or-pin-level-protocol-agents)
+  - [9.5 Combined convenience agents](#95-combined-convenience-agents)
+- [10. Scoreboard architecture](#10-scoreboard-architecture)
+  - [10.1 Functional scoreboards](#101-functional-scoreboards)
+  - [10.2 Rules scoreboards](#102-rules-scoreboards)
+  - [10.3 Local DUT-specific scoreboards](#103-local-dut-specific-scoreboards)
+- [11. Testcase architecture](#11-testcase-architecture)
+- [12. RapidVPI phase discipline](#12-rapidvpi-phase-discipline)
+- [13. Valid-ready and sampled-handshake discipline](#13-valid-ready-and-sampled-handshake-discipline)
+- [14. Wide-vector and packed-field policy](#14-wide-vector-and-packed-field-policy)
+- [15. Configuration knobs and additive evolution](#15-configuration-knobs-and-additive-evolution)
+- [16. Error injection, backpressure, timing, and stress hooks](#16-error-injection-backpressure-timing-and-stress-hooks)
+- [17. Memory models and protocol data models](#17-memory-models-and-protocol-data-models)
+- [18. Logging, tracing, and debug controls](#18-logging-tracing-and-debug-controls)
+- [19. Reset, lifecycle, and runner hooks](#19-reset-lifecycle-and-runner-hooks)
+- [20. Documentation requirements](#20-documentation-requirements)
+- [21. Creation checklist for a new `vip_xxx`](#21-creation-checklist-for-a-new-vip_xxx)
+- [22. Example target shape for `vip_uart`](#22-example-target-shape-for-vip_uart)
+- [23. Anti-patterns](#23-anti-patterns)
 
 ---
 
@@ -60,6 +92,7 @@ A reusable VIP should not contain:
 - hardcoded top-level net names beyond documented default prefix conventions
 - a second copy of `vip_common`
 - simulation launch policy; the parent project owns simulator execution
+- raw VPI callback registration logic unless the VIP is intentionally adding a new low-level RapidVPI primitive
 
 The reusable VIP should be usable as:
 
@@ -126,11 +159,11 @@ Testcases should describe scenarios:
 
 The mechanics of driving, waiting, observing, and checking should be delegated to reusable helpers or agents.
 
-### 2.4 Additive extension only
+### 2.4 Additive extension only after API stabilization
 
-New features must be added without breaking existing users whenever possible.
+New features should be added without breaking existing users when the library is already considered stable.
 
-Default policy:
+Default policy for mature VIPs:
 
 - keep old constructors working
 - keep old method names working
@@ -139,6 +172,8 @@ Default policy:
 - add new enum values rather than replacing old boolean behavior when the feature has more than two stable modes
 - reset new per-case state in `reset_case()`
 - document any changed default clearly in README
+
+During early template or library cleanup, it is acceptable to make deliberate breaking changes if the result is a cleaner policy source. Do not preserve misleading names such as `time_ns` when the value is actually raw simulator ticks.
 
 ### 2.5 Protocol-generic goes into `vip_xxx`; DUT-specific stays local
 
@@ -162,7 +197,834 @@ Examples of project-local behavior:
 
 ---
 
-## 3. Standard repository layout
+## 3. RapidVPI public API reference
+
+This section is intentionally detailed. Agents should not need to inspect RapidVPI installed headers to discover basic awaiter operations.
+
+### 3.1 Include model and namespace
+
+Typical VIP source files include RapidVPI through installed include paths configured by CMake:
+
+```cpp
+#include "testbase.hpp"
+```
+
+All current public RapidVPI testbase symbols are in namespace:
+
+```cpp
+namespace test {
+}
+```
+
+Most project test classes derive from:
+
+```cpp
+class Test : public test::TestBase {
+public:
+    using RunTask = test::TestBase::RunTask;
+    using RunUserTask = test::TestBase::RunUserTask;
+
+    void initNets() override;
+};
+```
+
+Common convenience in `.cpp` files:
+
+```cpp
+using test::ticks;
+using test::ps;
+using test::ns;
+using test::us;
+using test::ms;
+```
+
+or, for local functions only:
+
+```cpp
+using namespace test;
+```
+
+Do not put `using namespace test;` in public headers of reusable VIP packages unless that header is intentionally tiny and local. Prefer explicit `test::` in public headers.
+
+### 3.2 Time units and raw simulator ticks
+
+RapidVPI exposes these time-related public types and constants:
+
+```cpp
+namespace test {
+    using sim_tick_t = std::uint64_t;
+
+    enum class TimeUnit {
+        ticks,
+        ps,
+        ns,
+        us,
+        ms
+    };
+
+    inline constexpr auto ticks = TimeUnit::ticks;
+    inline constexpr auto ps    = TimeUnit::ps;
+    inline constexpr auto ns    = TimeUnit::ns;
+    inline constexpr auto us    = TimeUnit::us;
+    inline constexpr auto ms    = TimeUnit::ms;
+}
+```
+
+Meaning:
+
+```text
+ticks  raw simulator ticks from VPI time
+ps     picoseconds
+ns     nanoseconds
+us     microseconds
+ms     milliseconds
+```
+
+A raw tick is whatever the simulator effective precision says it is. If Questa is launched with `-t 1ps`, one raw VPI tick is one picosecond. If the effective VPI precision is `1ns`, one raw VPI tick is one nanosecond.
+
+Do not assume ticks are nanoseconds.
+
+Observed time should normally be stored as:
+
+```cpp
+test::sim_tick_t time_tick = rd.getTime<test::ticks>();
+```
+
+Converted human time is available when needed:
+
+```cpp
+double t_ns = rd.getTime<test::ns>();
+double t_us = rd.getTime<test::us>();
+double t_ms = rd.getTime<test::ms>();
+```
+
+### 3.3 `TestBase` lifecycle and net registration
+
+A project test object derives from `test::TestBase` and implements:
+
+```cpp
+virtual void initNets() = 0;
+```
+
+`initNets()` registers all DUT nets that will be used by coroutines:
+
+```cpp
+void Test::initNets() {
+    addNet("clk", 1);
+    addNet("rst_n", 1);
+    addNet("s_axis_tvalid", 1);
+    addNet("s_axis_tready", 1);
+    addNet("s_axis_tdata", 32);
+}
+```
+
+Public net and metadata functions:
+
+```cpp
+void setDutName(const std::string& name);
+void addNet(const std::string& key, unsigned int length);
+vpiHandle getNetHandle(const std::string& key);
+unsigned int getNetLength(const std::string& key);
+```
+
+Rules:
+
+- `setDutName()` is normally called by project setup before `initNets()` runs.
+- `addNet(key, length)` resolves the full VPI path as `dutName + "." + key`.
+- Use stable short keys such as `clk`, `rst_n`, `m0_awvalid` in VIP/test code.
+- `length` is the RTL net width in bits and is used for vector packing/unpacking.
+- Missing or misspelled nets produce error prints and usually lead to failed callbacks or reads.
+
+Public simulator precision metadata:
+
+```cpp
+int vpiTimePrecisionExp10() const noexcept;
+long double vpiTickPeriodSeconds() const noexcept;
+```
+
+Use these for startup/debug metadata only. Do not implement your own repeated unit conversion in VIP code.
+
+Example startup print:
+
+```cpp
+std::printf("[INFO] vpi_precision_exp10=%d tick_period_s=%.21Lg\n",
+            test.vpiTimePrecisionExp10(),
+            test.vpiTickPeriodSeconds());
+```
+
+### 3.4 `RunTask` and `RunUserTask`
+
+RapidVPI uses two coroutine return types:
+
+```cpp
+test::TestBase::RunTask
+test::TestBase::RunUserTask
+```
+
+Use `RunTask` for top-level testcase coroutines or long-lived agent coroutines registered with the test runner:
+
+```cpp
+Test::RunTask tc_smoke(Test& test) {
+    co_await reset_case(test);
+    co_return;
+}
+```
+
+Use `RunUserTask` for nested helper coroutines that are themselves awaited by another coroutine:
+
+```cpp
+Test::RunUserTask wait_cycles(Test& test, unsigned cycles) {
+    for (unsigned i = 0; i < cycles; ++i) {
+        co_await clock_once(test);
+    }
+    co_return;
+}
+```
+
+Rules:
+
+- `RunTask` starts immediately and is used for top-level tests/agents.
+- `RunUserTask` starts suspended and is resumed by `co_await`.
+- Helpers such as reset, wait, polling loops, and protocol sub-steps should return `RunUserTask`.
+- Do not manually destroy coroutine handles from user code.
+
+### 3.5 Write awaitable: `getCoWrite`
+
+Write awaiters schedule writes into the VPI write/update side. They are used to drive DUT inputs.
+
+Factory APIs:
+
+```cpp
+TestBase::AwaitWrite getCoWrite();
+
+template <test::TimeUnit U>
+TestBase::AwaitWrite getCoWrite(test::delay_arg_t<U> delay);
+```
+
+Use no-argument `getCoWrite()` for the common zero-delay write phase:
+
+```cpp
+auto wr = test.getCoWrite();
+wr.write("valid", 1);
+wr.write("data", 0x55);
+co_await wr;
+```
+
+Use explicit units for delayed writes:
+
+```cpp
+auto wr = test.getCoWrite<test::ns>(10.0);
+wr.write("valid", 0);
+co_await wr;
+```
+
+Use raw simulator ticks only when the delay is intentionally simulator-native:
+
+```cpp
+auto wr = test.getCoWrite<test::ticks>(10000);
+wr.write("valid", 1);
+co_await wr;
+```
+
+Do not use old forms:
+
+```cpp
+// Wrong with current RapidVPI API
+// auto wr = test.getCoWrite(0);
+// auto wr = test.getCoWrite(10.0);
+```
+
+Public `AwaitWrite` methods:
+
+```cpp
+void write(const std::string& net, unsigned long long value);
+void write(const std::string& net, const std::string& value, unsigned int base = 2);
+
+void force(const std::string& net, unsigned long long value);
+void force(const std::string& net, const std::string& value, unsigned int base = 2);
+
+void release(const std::string& net);
+
+void setDelay();
+
+template <test::TimeUnit U>
+void setDelay(test::delay_arg_t<U> delay);
+```
+
+Numeric write examples:
+
+```cpp
+auto wr = test.getCoWrite();
+wr.write("rst_n", 0);
+wr.write("s_axis_tdata", 0x12345678ULL);
+co_await wr;
+```
+
+Binary string write example:
+
+```cpp
+auto wr = test.getCoWrite();
+wr.write("wide_bus", "10100011");
+co_await wr;
+```
+
+Hex string write example:
+
+```cpp
+auto wr = test.getCoWrite();
+wr.write("wide_bus", "DEADBEEF01234567", 16);
+co_await wr;
+```
+
+Force/release examples:
+
+```cpp
+auto wr = test.getCoWrite();
+wr.force("rx_i", 0);
+co_await wr;
+
+wr = test.getCoWrite();
+wr.release("rx_i");
+co_await wr;
+```
+
+`setDelay()` is available but should be uncommon. Prefer selecting the delay at construction:
+
+```cpp
+auto wr = test.getCoWrite();
+wr.setDelay<test::ns>(10.0);
+wr.write("sig", 1);
+co_await wr;
+```
+
+Prefer this instead:
+
+```cpp
+auto wr = test.getCoWrite<test::ns>(10.0);
+wr.write("sig", 1);
+co_await wr;
+```
+
+Important write rules:
+
+- Queue all writes before `co_await wr`.
+- The actual `vpi_put_value()` calls happen when the awaiter resumes.
+- Do not queue two writes to the same net in the same `AwaitWrite`; use one final value or separate write phases.
+- Numeric writes are for signals up to 64 bits. For wider buses, use string writes.
+- String writes preserve wide values and can represent `x` and `z` states.
+- Use base `16` for hex input. Default base is binary.
+
+### 3.6 Read awaitable: `getCoRead`
+
+Read awaiters schedule a read-only synchronization and then sample requested nets. They are used to observe DUT outputs and internal registered state.
+
+Factory APIs:
+
+```cpp
+TestBase::AwaitRead getCoRead();
+
+template <test::TimeUnit U>
+TestBase::AwaitRead getCoRead(test::delay_arg_t<U> delay);
+```
+
+Use no-argument `getCoRead()` for the common immediate read-only sample:
+
+```cpp
+auto rd = test.getCoRead();
+rd.read("ready");
+rd.read("data");
+co_await rd;
+
+const bool ready = (rd.getNum("ready") & 1ULL) != 0ULL;
+const auto data = rd.getNum("data");
+```
+
+Use explicit units for delayed reads:
+
+```cpp
+auto rd = test.getCoRead<test::ns>(10.0);
+rd.read("status");
+co_await rd;
+```
+
+Use raw ticks only when the delay is intentionally simulator-native:
+
+```cpp
+auto rd = test.getCoRead<test::ticks>(10000);
+rd.read("status");
+co_await rd;
+```
+
+Public `AwaitRead` methods:
+
+```cpp
+void read(const std::string& net);
+
+unsigned long long getNum(const std::string& net);
+std::string getBinStr(const std::string& net);
+std::string getHexStr(const std::string& net);
+
+void setDelay();
+
+template <test::TimeUnit U>
+void setDelay(test::delay_arg_t<U> delay);
+
+template <test::TimeUnit U>
+test::time_value_t<U> getTime() const;
+```
+
+Timestamp examples:
+
+```cpp
+const test::sim_tick_t t_tick = rd.getTime<test::ticks>();
+const double t_ns = rd.getTime<test::ns>();
+```
+
+Return type policy:
+
+```text
+rd.getTime<ticks>() returns test::sim_tick_t
+rd.getTime<ps>()    returns double
+rd.getTime<ns>()    returns double
+rd.getTime<us>()    returns double
+rd.getTime<ms>()    returns double
+```
+
+Important read rules:
+
+- Call `rd.read(net)` before `co_await rd`.
+- Call value getters after `co_await rd`.
+- `getNum(net)` is intended only for signals that fit in 64 bits.
+- `getNum(net)` consumes the stored numeric chunks for that read result. Do not call `getNum(net)` repeatedly for the same sampled value unless you intentionally know how the stored chunks behave.
+- Use `getBinStr(net)` or `getHexStr(net)` for wide buses.
+- `getBinStr(net)` returns a vector-width-oriented binary string that may be padded to a 32-bit chunk boundary.
+- `getHexStr(net)` converts the binary string to hex and trims leading zeros.
+- For protocol packets, agents should convert raw sampled strings into protocol-specific byte/field types instead of making testcases decode everything manually.
+
+### 3.7 Change awaitable: `getCoChange`
+
+Change awaiters wait for a VPI value-change callback on one net. They are useful for edge/change-driven monitors and simple status waits.
+
+Factory APIs:
+
+```cpp
+TestBase::AwaitChange getCoChange(const std::string& net);
+TestBase::AwaitChange getCoChange(const std::string& net,
+                                  unsigned long long target_value);
+```
+
+Non-targeted change wait:
+
+```cpp
+auto chg = test.getCoChange("irq");
+co_await chg;
+
+const bool irq = (chg.getNum() & 1ULL) != 0ULL;
+const test::sim_tick_t t_tick = chg.getTime<test::ticks>();
+```
+
+Targeted change wait:
+
+```cpp
+auto chg = test.getCoChange("done", 1);
+co_await chg;
+```
+
+Public `AwaitChange` methods:
+
+```cpp
+unsigned long long getNum();
+std::string getBinStr();
+std::string getHexStr();
+
+template <test::TimeUnit U>
+test::time_value_t<U> getTime() const;
+```
+
+Return type policy:
+
+```text
+chg.getTime<ticks>() returns test::sim_tick_t
+chg.getTime<ps>()    returns double
+chg.getTime<ns>()    returns double
+chg.getTime<us>()    returns double
+chg.getTime<ms>()    returns double
+```
+
+Important change-wait rules:
+
+- Use targeted `getCoChange(net, value)` mostly for scalar or small status signals.
+- Avoid bus-equality waits on wide buses or multi-field protocol state.
+- For bus conditions, use an edge-sampled read loop and bit masks.
+- After any change/read observation, do not immediately schedule writes that are intended to affect the same sampled time slot. Move to a safe future write phase.
+
+Preferred bit-mask polling pattern:
+
+```cpp
+while (true) {
+    auto rd = test.getCoRead();
+    rd.read("status");
+    co_await rd;
+
+    const auto status = rd.getNum("status");
+    const bool done = (status & DONE_MASK) != 0ULL;
+
+    if (done) {
+        break;
+    }
+
+    co_await clock_once(test);
+}
+```
+
+### 3.8 Value conversion helpers
+
+`TestBase` exposes static conversion helpers:
+
+```cpp
+static char bin_to_hex_char(const std::string& bin);
+static std::string bin_to_hex(const std::string& bin);
+static std::string hex_to_bin(const std::string& hex);
+```
+
+Use cases:
+
+```cpp
+const std::string bin = test::TestBase::hex_to_bin("DEAD");
+const std::string hex = test::TestBase::bin_to_hex("1101111010101101");
+```
+
+Rules:
+
+- `hex_to_bin()` accepts `0-9`, `a-f`, `A-F`, `x`, `X`, `z`, and `Z`.
+- Hex `X` maps to binary `xxxx`; hex `Z` maps to binary `zzzz`.
+- `bin_to_hex()` supports `x` and `z`. Mixed-state nibbles that cannot be represented by one exact hex digit collapse to `X`.
+- For exact mixed 4-state patterns, keep binary strings or protocol-specific vector helpers.
+
+### 3.9 Test registration and factory registration
+
+A project normally registers a concrete `Test` factory with RapidVPI through:
+
+```cpp
+namespace core {
+    void registerTestFactory(std::function<std::unique_ptr<test::TestBase>()> factory);
+}
+```
+
+User project must provide:
+
+```cpp
+extern "C" void userRegisterFactory() {
+    core::registerTestFactory([]() -> std::unique_ptr<test::TestBase> {
+        auto t = std::make_unique<Test>();
+        t->setDutName("tb.dut");
+        return t;
+    });
+}
+```
+
+Tests are registered through the `TestBase` API:
+
+```cpp
+void registerTest(const std::string& name,
+                  std::function<std::coroutine_handle<>()> func);
+```
+
+Typical pattern inside `Test` construction/setup:
+
+```cpp
+registerTest("tc_smoke", [this]() {
+    return tc_smoke().handle;
+});
+```
+
+Project wrappers may hide this behind a local runner/helper. The important rule is that the registered function returns a coroutine handle for a `RunTask` coroutine.
+
+### 3.10 RapidVPI API cheat sheet
+
+Use this as the quick reference for generated VIP code.
+
+| Intent | API | Notes |
+|---|---|---|
+| Zero-delay write phase | `auto wr = test.getCoWrite();` | Preferred replacement for old `getCoWrite(0)` |
+| Delayed write in ns | `auto wr = test.getCoWrite<ns>(10.0);` | Explicit human unit |
+| Delayed write in raw ticks | `auto wr = test.getCoWrite<ticks>(10000);` | Simulator-native delay |
+| Queue numeric write | `wr.write("sig", 1);` | Use for width <= 64 |
+| Queue binary string write | `wr.write("bus", "1010");` | Default base is 2 |
+| Queue hex string write | `wr.write("bus", "DEAD", 16);` | Good for wide vectors |
+| Force net | `wr.force("sig", 0);` | Uses VPI force |
+| Release force | `wr.release("sig");` | Uses VPI release |
+| Zero-delay read phase | `auto rd = test.getCoRead();` | Preferred replacement for old `getCoRead(0)` |
+| Delayed read in ns | `auto rd = test.getCoRead<ns>(10.0);` | Explicit human unit |
+| Request read | `rd.read("sig");` | Call before `co_await rd` |
+| Get numeric read | `rd.getNum("sig")` | Use width <= 64 only |
+| Get binary read | `rd.getBinStr("bus")` | Use for wide/4-state vectors |
+| Get hex read | `rd.getHexStr("bus")` | Use for wide display/compare |
+| Read timestamp raw | `rd.getTime<ticks>()` | Best for scoreboards/logging/CSV |
+| Read timestamp ns | `rd.getTime<ns>()` | Use for human display only |
+| Wait any change | `auto chg = test.getCoChange("sig");` | Change-driven monitor |
+| Wait target value | `auto chg = test.getCoChange("done", 1);` | Prefer small/scalar signals |
+| Change value numeric | `chg.getNum()` | After `co_await chg` |
+| Change value hex/bin | `chg.getHexStr()`, `chg.getBinStr()` | After `co_await chg` |
+| Change timestamp raw | `chg.getTime<ticks>()` | Best for scoreboards/logging/CSV |
+| Sim precision exp10 | `test.vpiTimePrecisionExp10()` | Metadata, not repeated conversion |
+| Tick period seconds | `test.vpiTickPeriodSeconds()` | Metadata/debug only |
+| Register net | `addNet("sig", width)` | Usually in `initNets()` |
+| Get net width | `getNetLength("sig")` | Rarely needed by agents |
+| Hex to bin helper | `TestBase::hex_to_bin("DEAD")` | Public static helper |
+| Bin to hex helper | `TestBase::bin_to_hex("1010")` | Public static helper |
+
+---
+
+## 4. Time, timestamps, logging, and scoreboard policy
+
+### 4.1 Timestamp rule: ticks are the default truth
+
+Observed timestamps should be stored and passed around as raw simulator ticks:
+
+```cpp
+test::sim_tick_t time_tick = rd.getTime<test::ticks>();
+```
+
+Why:
+
+- raw ticks are exact
+- no precision is lost through `double`
+- no unit assumption leaks into generic VIP code
+- logs and CSV can be post-processed using the simulator precision
+- generic `vip_common` does not need to guess whether the user wants ps, ns, us, or ms
+
+Do not name a raw tick field `time_ns`.
+
+Good names:
+
+```cpp
+test::sim_tick_t time_tick = 0;
+test::sim_tick_t start_tick = 0;
+test::sim_tick_t end_tick = 0;
+```
+
+Bad names for raw ticks:
+
+```cpp
+double time_ns;
+std::uint64_t sim_time_ns;
+```
+
+### 4.2 Delay rule: explicit human units for intended time delays
+
+When code intentionally waits for real simulated time, use explicit units:
+
+```cpp
+co_await test.getCoWrite<test::ns>(10.0);
+co_await test.getCoRead<test::us>(1.0);
+```
+
+When code intentionally waits raw simulator ticks, use `<ticks>`:
+
+```cpp
+co_await test.getCoWrite<test::ticks>(10000);
+```
+
+The no-delay phase APIs are unitless:
+
+```cpp
+co_await test.getCoWrite();
+co_await test.getCoRead();
+```
+
+Do not write:
+
+```cpp
+co_await test.getCoWrite<test::ns>(0.0);
+co_await test.getCoRead<test::ps>(0.0);
+```
+
+when the intent is simply “next write/read phase.” Use no-argument APIs.
+
+### 4.3 When to use `getTime<ticks>()`
+
+Use `getTime<ticks>()` when you already have a read/change awaiter and need to record the event time:
+
+```cpp
+auto rd = test.getCoRead();
+rd.read("rx_valid");
+rd.read("rx_data");
+co_await rd;
+
+const test::sim_tick_t tick = rd.getTime<test::ticks>();
+scb.observe_rx_byte("uart0", byte, tick);
+```
+
+Use it for:
+
+- scoreboard observed events
+- expected/observed transaction timestamps
+- trace records
+- CSV event rows
+- debug history buffers
+- rules checker event ordering
+- latency calculations that will remain in simulator ticks
+
+`getTime<ticks>()` is the least ambiguous and cheapest timestamp path because it returns the stored raw tick count.
+
+### 4.4 When to use `getTime<ns>()`, `getTime<us>()`, or `getTime<ms>()`
+
+Use converted time only for human-facing display or when a protocol/user API explicitly wants physical units:
+
+```cpp
+const double t_ns = rd.getTime<test::ns>();
+std::printf("[DBG] rx byte at %.3f ns\n", t_ns);
+```
+
+Good uses:
+
+- one-off debug prints
+- final human-readable report lines
+- measured latency displayed to user
+- diagnostics where the unit is printed next to the value
+
+Avoid converted time for internal scoreboard storage:
+
+```cpp
+// Prefer this
+scb.observe_frame(port, frame, rd.getTime<test::ticks>());
+
+// Avoid this for generic storage
+scb.observe_frame(port, frame, rd.getTime<test::ns>());
+```
+
+Converted time returns `double`, so it is a display/convenience view, not the canonical timestamp.
+
+### 4.5 Runner-level and generic print timestamps
+
+Sometimes a log line is not tied to a specific `AwaitRead` or `AwaitChange` object, for example:
+
+```text
+runner starting case
+runner done
+scoreboard total summary
+agent queue depth report
+```
+
+Preferred policy:
+
+- let `vip_common` logger/runner stamp lines with raw ticks automatically when available
+- keep the log label explicit, for example `[tick=123456]`
+- print simulator precision once near the beginning if useful
+
+Example style:
+
+```text
+# [runner][INFO] vpi_precision_exp10=-12 tick_unit=1ps
+# [runner][INFO][tick=0] starting tc_smoke
+# [SCB][PASS][tick=25000] rx byte matched
+# [runner][INFO][tick=90000] runner done
+```
+
+If a VIP helper needs a generic current timestamp and no awaiter is available, do not scatter raw VPI calls everywhere. Add or use one centralized `vip_common` helper such as:
+
+```cpp
+test::sim_tick_t sim_time_ticks();
+```
+
+That helper should stamp raw ticks. It should not be named `sim_time_ns()` unless it actually converts to ns.
+
+Do not call `test::detail::current_vpi_time_ticks()` from reusable VIP code. It is an internal RapidVPI detail namespace.
+
+### 4.6 Scoreboard timestamp policy
+
+Reusable scoreboards should accept raw tick timestamps:
+
+```cpp
+void observe_frame(const std::string& port,
+                   const UartFrame& frame,
+                   test::sim_tick_t time_tick);
+```
+
+or optional tick timestamps:
+
+```cpp
+static constexpr test::sim_tick_t INVALID_TICK =
+    std::numeric_limits<test::sim_tick_t>::max();
+
+void note_fail(const std::string& msg,
+               test::sim_tick_t time_tick = INVALID_TICK);
+```
+
+Do not design new reusable scoreboards around:
+
+```cpp
+double time_ns = -1.0;
+```
+
+That older style mixes display units with exact simulation event ordering.
+
+If a scoreboard prints a human-readable timestamp, it may convert only at print time and must show the unit:
+
+```text
+[SCB][FAIL][tick=25000] rx mismatch
+```
+
+or:
+
+```text
+[SCB][FAIL][tick=25000][time_ns=25.000] rx mismatch
+```
+
+For normal logs, `[tick=...]` alone is preferred.
+
+### 4.7 Simulator time precision metadata
+
+RapidVPI reads the effective VPI time precision at simulation start:
+
+```cpp
+const int precision_exp10 = vpi_get(vpiTimePrecision, nullptr);
+```
+
+and stores it inside `TestBase`. User code can inspect:
+
+```cpp
+int precision = test.vpiTimePrecisionExp10();
+long double tick_s = test.vpiTickPeriodSeconds();
+```
+
+Examples:
+
+```text
+precision=-12 -> one tick is 1ps  -> tick_period_s = 1e-12
+precision=-9  -> one tick is 1ns  -> tick_period_s = 1e-9
+precision=-6  -> one tick is 1us  -> tick_period_s = 1e-6
+```
+
+The simulator/project owns the actual resolution, for example through Questa `-t 1ps` and HDL `timeunit/timeprecision`. RapidVPI does not override the simulator resolution. It only reads the effective VPI precision and uses it for explicit unit conversion.
+
+### 4.8 Do not recreate RapidVPI time conversion in VIPs
+
+Do not write VIP-local conversion code such as:
+
+```cpp
+// Do not do this in reusable VIP code
+const double t_ns = raw_ticks / 1000.0;
+```
+
+That assumes a specific precision. Use RapidVPI conversion:
+
+```cpp
+const double t_ns = rd.getTime<test::ns>();
+```
+
+or store raw ticks:
+
+```cpp
+const test::sim_tick_t t = rd.getTime<test::ticks>();
+```
+
+For current-time stamping outside an awaiter, centralize the helper in `vip_common` and keep it raw tick based.
+
+---
+
+## 5. Standard repository layout
 
 Use this layout as the default for a new `vip_xxx` package:
 
@@ -264,7 +1126,7 @@ For a bus protocol where the common industry terms are master/slave, use master/
 
 ---
 
-## 4. CMake integration model
+## 6. CMake integration model
 
 A reusable VIP normally contributes object libraries to the parent project's shared-library target.
 
@@ -316,10 +1178,11 @@ Rules:
 - Let the parent project build the final RapidVPI `.so`.
 - Use `${CMAKE_SOURCE_DIR}/ext` so includes work as `"vip_xxx/..."` and `"vip_common/..."`.
 - Keep CMake boring and predictable.
+- Keep simulator launch targets in the RTL/project repo, not inside reusable VIP packages.
 
 ---
 
-## 5. Namespaces, file naming, and public headers
+## 7. Namespaces, file naming, and public headers
 
 Use one namespace per protocol VIP:
 
@@ -364,10 +1227,11 @@ Default policy:
 - Keep private helper structs inside `.cpp` files unless testcases or other agents need them.
 - Avoid dumping every helper into one giant public header.
 - Keep header dependencies as small as practical, but do not over-engineer.
+- In public headers, prefer explicit `test::TestBase`, `test::sim_tick_t`, and `test::ns` over broad namespace imports.
 
 ---
 
-## 6. Protocol parameter objects
+## 8. Protocol parameter objects
 
 Every reusable VIP should have a central parameter/config object under `common/`.
 
@@ -380,11 +1244,21 @@ struct UartParams {
     bool parity_enable = false;
     bool parity_odd = false;
 
-    unsigned bit_ticks = 16;
-    unsigned sample_tick = 8;
+    unsigned bit_clks = 16;
+    unsigned sample_clk_index = 8;
 
     bool lsb_first = true;
 };
+```
+
+Avoid using `ticks` in protocol-local names when the value means clock cycles or oversampling ticks. In RapidVPI, `ticks` means raw simulator ticks. For protocol-local counts, prefer names such as:
+
+```text
+bit_clks
+sample_clk_index
+idle_poll_clks
+gap_cycles
+response_cycles
 ```
 
 For buses, parameter objects should centralize widths and protocol encoding helpers:
@@ -409,17 +1283,19 @@ Rules:
 - Keep parameter objects cheap to copy unless they intentionally own shared state.
 - Avoid compile-time templates unless they clearly reduce code and do not harm runtime configurability.
 - Runtime-configurable VIP is preferred because the same compiled VIP often verifies multiple DUT configurations.
+- If a parameter is a RapidVPI raw simulator tick, name it `*_tick` or `*_ticks` and document that it is `test::sim_tick_t`-compatible.
+- If a parameter is a protocol clock count, name it `*_clk`, `*_clks`, or `*_cycles`.
 
 ---
 
-## 7. Agent architecture
+## 9. Agent architecture
 
 An agent is a long-lived object owned by the project `Test` class. It uses RapidVPI coroutines to drive or monitor a protocol interface.
 
 Typical construction:
 
 ```cpp
-class Test : public vip::common::TestBase {
+class Test : public test::TestBase {
 public:
     Test()
         : scb()
@@ -443,7 +1319,7 @@ public:
 Agents should usually provide:
 
 ```cpp
-using RunTask = TestBase::RunTask;
+using RunTask = test::TestBase::RunTask;
 
 RunTask agent(unsigned idx);
 void attach_scoreboards(...);
@@ -452,8 +1328,8 @@ void attach_scoreboards(...);
 For multi-port agents, constructors should accept either a count or explicit base names:
 
 ```cpp
-XxxMaster(TestBase& tb, unsigned count, XxxParams params = XxxParams{});
-XxxMaster(TestBase& tb, std::vector<std::string> names, XxxParams params = XxxParams{});
+XxxMaster(test::TestBase& tb, unsigned count, XxxParams params = XxxParams{});
+XxxMaster(test::TestBase& tb, std::vector<std::string> names, XxxParams params = XxxParams{});
 ```
 
 Base names should derive signal names from suffixes. Example:
@@ -473,12 +1349,11 @@ base = "m0"
 m0_awvalid
 m0_awready
 m0_awaddr
-...
 ```
 
 Never require testcases to hardcode every pin name if a stable prefix convention exists. If the protocol or DUT wrapper does not match the default convention, add a port-map/config object rather than hacking the testcase.
 
-### 7.1 Master or initiator agents
+### 9.1 Master or initiator agents
 
 Use a master/initiator agent when the VIP starts transactions into the DUT.
 
@@ -499,11 +1374,11 @@ Public API style:
 unsigned enqueue_write(...);
 unsigned enqueue_read(...);
 
-RunTask wait_done(unsigned ticket);
+test::TestBase::RunUserTask wait_done(unsigned ticket);
 bool is_done(unsigned ticket) const;
 
 void set_trace_enable(const std::string& port, bool enable);
-void set_backpressure_mode(...); // if the master also sinks responses
+void set_backpressure_mode(...);
 ```
 
 For protocols with split directions, keep internal split files:
@@ -517,7 +1392,7 @@ mst_coroutines_rd.cpp
 
 The high-level API belongs in `master.hpp`. Low-level pin mechanics belong in coroutine `.cpp` files.
 
-### 7.2 Slave or responder agents
+### 9.2 Slave or responder agents
 
 Use a slave/responder agent when the VIP responds to transactions initiated by the DUT.
 
@@ -554,7 +1429,7 @@ enum class ReadyMode : unsigned {
 
 Avoid too many fragile booleans when a stable mode enum is clearer.
 
-### 7.3 Monitor-only agents
+### 9.3 Monitor-only agents
 
 Use monitor agents when no driving is needed or when a passive checker is useful.
 
@@ -570,13 +1445,13 @@ Example API:
 
 ```cpp
 void attach_scoreboards(ScbXxxStream* stream, ScbXxxRules* rules);
-RunTask agent(unsigned idx);
+test::TestBase::RunTask agent(unsigned idx);
 
 std::vector<XxxObservedTxn> get_history(const std::string& port) const;
 void clear_history(const std::string& port);
 ```
 
-### 7.4 Serial or pin-level protocol agents
+### 9.4 Serial or pin-level protocol agents
 
 For UART, MDIO, SPI, I2C-like, or other pin-level protocols, split line-level behavior cleanly:
 
@@ -586,7 +1461,7 @@ For UART, MDIO, SPI, I2C-like, or other pin-level protocols, split line-level be
 - timing configuration: explicit bit/cycle timing in params
 - error injection: optional and off by default
 
-Serial agents must avoid hidden assumptions about absolute time. Use project clock cycles or explicit tick helpers.
+Serial agents must avoid hidden assumptions about absolute time. If timing is based on a project clock, use clock cycles. If timing is based on raw simulator delay, use `getCoWrite<ticks>()` or `getCoRead<ticks>()` explicitly and document it.
 
 For UART-like protocols:
 
@@ -610,7 +1485,7 @@ RX agent:
 
 All bit-level sampling must respect RapidVPI read/write phase rules. RX sampling is observation. TX line driving is writing and must be scheduled in a safe write phase before the sampled edge that matters.
 
-### 7.5 Combined convenience agents
+### 9.5 Combined convenience agents
 
 A protocol may provide a convenience wrapper that owns multiple agents, but keep the leaf agents reusable.
 
@@ -628,16 +1503,16 @@ The wrapper is optional. It should not hide useful knobs or prevent direct acces
 
 ---
 
-## 8. Scoreboard architecture
+## 10. Scoreboard architecture
 
-All reusable VIP scoreboards should report through `vip::common::Scoreboard`.
+All reusable VIP scoreboards should report through `vip_common` scoreboard/logging facilities when available.
 
 Typical construction:
 
 ```cpp
 vip::common::Scoreboard scb;
 vip::uart::ScbUartStream scb_uart(scb, uart_params);
-vip::uart::ScbUartRules  scb_uart_rules(scb, uart_params);
+vip::uart::ScbUartRules scb_uart_rules(scb, uart_params);
 ```
 
 Each scoreboard should provide:
@@ -655,7 +1530,15 @@ void set_enable(bool en);
 void set_warn_only(bool en);
 ```
 
-### 8.1 Functional scoreboards
+Scoreboard event APIs should use raw ticks:
+
+```cpp
+void observe_txn(const std::string& port,
+                 const XxxTxn& txn,
+                 test::sim_tick_t time_tick);
+```
+
+### 10.1 Functional scoreboards
 
 Functional scoreboards compare expected protocol transactions against observed protocol transactions.
 
@@ -682,13 +1565,18 @@ void expect_bytes(const std::string& port, const std::vector<std::uint8_t>& byte
 and clear observed-side APIs:
 
 ```cpp
-void observe_frame(const std::string& port, const UartFrame& frame, double t_ns);
-void observe_error(const std::string& port, UartError err, double t_ns);
+void observe_frame(const std::string& port,
+                   const UartFrame& frame,
+                   test::sim_tick_t time_tick);
+
+void observe_error(const std::string& port,
+                   UartError err,
+                   test::sim_tick_t time_tick);
 ```
 
 End-of-case checks should catch outstanding expectations and unexpected observations.
 
-### 8.2 Rules scoreboards
+### 10.2 Rules scoreboards
 
 Rules scoreboards check protocol legality/invariants independent from a specific expected transaction list.
 
@@ -708,8 +1596,9 @@ Default policy:
 - warning-only mode should exist for bring-up
 - fatal mode should exist for locked regression
 - noisy checks must be configurable
+- event time should be passed as `test::sim_tick_t` when available
 
-### 8.3 Local DUT-specific scoreboards
+### 10.3 Local DUT-specific scoreboards
 
 When a checker depends on one DUT's semantics, keep it in the project, not reusable VIP.
 
@@ -725,7 +1614,7 @@ Local scoreboards may use reusable VIP observations, but should not push DUT-onl
 
 ---
 
-## 9. Testcase architecture
+## 11. Testcase architecture
 
 In a project using reusable VIPs:
 
@@ -770,7 +1659,7 @@ Do not place large reusable protocol code in `tc_xxx.cpp`. If it becomes reusabl
 
 ---
 
-## 10. RapidVPI phase discipline
+## 12. RapidVPI phase discipline
 
 The most important rule:
 
@@ -779,15 +1668,17 @@ After an RO/read-observation await, do not schedule writes that are supposed to 
 Treat these as RO/read-observation awaits:
 
 ```cpp
-co_await test.getCoRead(...);
+co_await test.getCoRead();
+co_await test.getCoRead<test::ns>(...);
 co_await test.getCoChange(...);
 co_await test.utils.clock(...);
 ```
 
-Use safe write-phase transition helpers:
+Treat these as write-side awaits:
 
 ```cpp
-co_await test.utils.clock_to_write(1, 0);
+co_await test.getCoWrite();
+co_await test.getCoWrite<test::ns>(...);
 co_await test.utils.write_barrier();
 ```
 
@@ -795,10 +1686,11 @@ Recommended pattern when a condition is observed and a drive must happen next cy
 
 ```cpp
 while (true) {
-    auto r = test.getCoRead(0);
-    co_await r;
+    auto rd = test.getCoRead();
+    rd.read("ready");
+    co_await rd;
 
-    const bool ready = (r.getNum(ready_net) & 1u) != 0u;
+    const bool ready = (rd.getNum("ready") & 1ULL) != 0ULL;
 
     co_await test.utils.clock();
 
@@ -810,28 +1702,36 @@ while (true) {
 co_await test.utils.clock_to_write(1, 0);
 
 {
-    auto w = test.getCoWrite(0);
-    w.write(valid_net, 1);
-    co_await w;
+    auto wr = test.getCoWrite();
+    wr.write("valid", 1);
+    co_await wr;
 }
 ```
 
 Avoid:
 
 ```cpp
-auto r = test.getCoRead(0);
-co_await r;
+auto rd = test.getCoRead();
+rd.read("ready");
+co_await rd;
 
-auto w = test.getCoWrite(0);
-w.write(sig, 1);
-co_await w;
+auto wr = test.getCoWrite();
+wr.write("valid", 1);
+co_await wr;
 ```
 
 when the write is meant to affect the same edge just observed.
 
+For RapidVPI/VVP-style phase safety:
+
+- after any RO await, do not schedule writes in the same time slot
+- use an edge-sampled RO loop to check conditions
+- after the condition is met, perform writes in the next cycle using a fresh `getCoWrite()`
+- avoid broad bus-equality waits; use bit masks
+
 ---
 
-## 11. Valid-ready and sampled-handshake discipline
+## 13. Valid-ready and sampled-handshake discipline
 
 For valid-ready protocols:
 
@@ -847,29 +1747,31 @@ Preferred drive sequence:
 co_await test.utils.clock_to_write(1, 0);
 
 {
-    auto w = test.getCoWrite(0);
-    write_payload(w, payload);
-    w.write(valid_net, 0);
-    co_await w;
+    auto wr = test.getCoWrite();
+    write_payload(wr, payload);
+    wr.write("valid", 0);
+    co_await wr;
 }
 
 co_await test.utils.write_barrier();
 
 {
-    auto w = test.getCoWrite(0);
-    write_payload(w, payload);
-    w.write(valid_net, 1);
-    co_await w;
+    auto wr = test.getCoWrite();
+    write_payload(wr, payload);
+    wr.write("valid", 1);
+    co_await wr;
 }
 
 while (true) {
     co_await test.utils.clock();
 
-    auto r = test.getCoRead(0);
-    co_await r;
+    auto rd = test.getCoRead();
+    rd.read("valid");
+    rd.read("ready");
+    co_await rd;
 
-    const bool valid = (r.getNum(valid_net) & 1u) != 0u;
-    const bool ready = (r.getNum(ready_net) & 1u) != 0u;
+    const bool valid = (rd.getNum("valid") & 1ULL) != 0ULL;
+    const bool ready = (rd.getNum("ready") & 1ULL) != 0ULL;
 
     if (valid && ready) {
         break;
@@ -879,9 +1781,9 @@ while (true) {
 co_await test.utils.clock_to_write(1, 0);
 
 {
-    auto w = test.getCoWrite(0);
-    w.write(valid_net, 0);
-    co_await w;
+    auto wr = test.getCoWrite();
+    wr.write("valid", 0);
+    co_await wr;
 }
 ```
 
@@ -890,37 +1792,56 @@ For non-valid-ready sampled protocols, apply the same idea:
 - drive before the sampling edge
 - sample only after the clock/tick that defines protocol observation
 - do not modify outputs in the same phase used for observing inputs
-- for line protocols, make bit center sampling explicit
+- for line protocols, make bit-center sampling explicit
 
 ---
 
-## 12. Wide-vector and packed-field policy
+## 14. Wide-vector and packed-field policy
 
-Never use numeric RapidVPI writes for buses wider than 64 bits.
+Never use numeric RapidVPI writes or reads for buses wider than 64 bits.
 
 Policy:
 
 - use string/hex or bit-vector helpers for wide writes
-- preserve leading zeros
-- preserve exact width
+- preserve leading zeros where protocol width matters
+- preserve exact width in protocol-specific helper objects
 - prefer reusable helper types such as `XxxBitVec`, `AxiBitVec`, or protocol-specific byte vectors
 - use `getNum()` only for signals that fit within 64 bits
 - use `getHexStr()` or protocol helper reads for wider signals
 - pack and decode fields exactly as documented
 - never silently reverse MSB/LSB field order
+- do not make testcases manually slice huge strings if an agent can decode the protocol
 
 A common reusable type pattern:
 
 ```cpp
 using XxxDataWord = XxxBitVec;
-using XxxMask     = XxxBitVec;
+using XxxMask = XxxBitVec;
 ```
 
 For protocols with byte streams, prefer byte vectors internally and convert to bit vectors only at the VPI boundary.
 
+Wide write example:
+
+```cpp
+auto wr = test.getCoWrite();
+wr.write("wide_data", "00112233445566778899AABBCCDDEEFF", 16);
+co_await wr;
+```
+
+Wide read example:
+
+```cpp
+auto rd = test.getCoRead();
+rd.read("wide_data");
+co_await rd;
+
+const std::string data_hex = rd.getHexStr("wide_data");
+```
+
 ---
 
-## 13. Configuration knobs and additive evolution
+## 15. Configuration knobs and additive evolution
 
 Every feature knob should have a clear owner and default.
 
@@ -931,7 +1852,7 @@ Protocol shape:
   data width, address width, ID width, parity enable, stop bits
 
 Timing:
-  bit_ticks, sample_tick, response delay, valid gap cycles
+  bit_clks, sample_clk_index, response delay, valid gap cycles
 
 Backpressure:
   ready mode, bubble period, random pulse mode, scripted stalls
@@ -946,7 +1867,7 @@ Tracing:
   trace enable, output path, port filter, compression enable
 ```
 
-Add knobs in a way that does not break old code:
+Add knobs in a way that does not break old code once the VIP is stable:
 
 ```cpp
 void set_verbose(bool en);
@@ -981,7 +1902,7 @@ Do not turn on expensive history by default unless it is cheap and useful.
 
 ---
 
-## 14. Error injection, backpressure, timing, and stress hooks
+## 16. Error injection, backpressure, timing, and stress hooks
 
 Reusable VIPs should have stress hooks because serious DUTs fail under timing variation, not only under ideal transfers.
 
@@ -1018,14 +1939,14 @@ send break
 force bad stop bit
 force parity error
 jitter bit timing within safe scripted bounds
-glitch RX line for N ticks
+glitch RX line for N simulator ticks or N protocol cycles
 ```
 
 Do not implement all stress hooks in version one if it causes bloat. Design the API so they can be added without breaking the first users.
 
 ---
 
-## 15. Memory models and protocol data models
+## 17. Memory models and protocol data models
 
 Responder agents often need a backing model.
 
@@ -1071,7 +1992,7 @@ void share_memory(const std::string& dst, const std::string& src);
 
 ---
 
-## 16. Logging, tracing, and debug controls
+## 18. Logging, tracing, and debug controls
 
 Use `vip_common` logging style when available.
 
@@ -1080,9 +2001,30 @@ Logging policy:
 - keep normal logs useful and not noisy
 - verbose logs must be controlled by `set_verbose()`
 - bring-up logs should be guardable or removable
-- include protocol/agent name, port name, and simulation time when useful
+- include protocol/agent name, port name, and simulation tick when useful
 - failure messages should explain expected vs observed values
 - do not print huge payloads by default
+- converted time values must include their unit in the log key/name
+
+Preferred timestamp style:
+
+```text
+[SCB][PASS][tick=123456] expected byte matched
+```
+
+Optional human-time debug style:
+
+```text
+[DBG][tick=123456][time_ns=123.456] sampled start bit
+```
+
+Do not print:
+
+```text
+[time=123456 ns]
+```
+
+unless the value was actually converted to ns.
 
 Trace policy:
 
@@ -1091,6 +2033,7 @@ Trace policy:
 - trace output path must be configurable
 - trace records should be structured enough to post-process
 - trace enable should default off unless the trace is tiny
+- trace timestamps should be raw ticks by default
 
 Common trace object style:
 
@@ -1104,7 +2047,7 @@ struct TraceCfg {
 
 ---
 
-## 17. Reset, lifecycle, and runner hooks
+## 19. Reset, lifecycle, and runner hooks
 
 Every reusable scoreboard and agent must have clear reset/lifecycle behavior.
 
@@ -1156,7 +2099,7 @@ Agents must handle DUT reset cleanly:
 
 ---
 
-## 18. Documentation requirements
+## 20. Documentation requirements
 
 Every reusable VIP must have a top-level `README.md` with a clickable table of contents.
 
@@ -1169,6 +2112,7 @@ Top-level README should include:
 - how to attach scoreboards
 - common testcase examples
 - known limits
+- RapidVPI time/tick policy if the VIP exposes timestamps
 - additive integration notes
 
 Each agent folder README should include:
@@ -1189,13 +2133,14 @@ Each scoreboard folder README should include:
 - expected-side APIs
 - observed-side APIs
 - knobs and defaults
+- timestamp policy
 - end-of-case behavior
 
 For a new VIP, initial documentation can be compact, but must still make the API usable without reading all `.cpp` files.
 
 ---
 
-## 19. Creation checklist for a new `vip_xxx`
+## 21. Creation checklist for a new `vip_xxx`
 
 When creating a new reusable VIP, do this in order:
 
@@ -1209,12 +2154,14 @@ When creating a new reusable VIP, do this in order:
    - Frame, packet, beat, command, register access, byte stream, or bus transfer?
    - What fields belong in `common/xxx_types.hpp`?
    - What fields are protocol-generic vs DUT-specific?
+   - Which timestamps are needed, and are they stored as raw ticks?
 
 3. Define the parameter object.
    - widths
    - timing
    - feature enables
    - derived helpers
+   - avoid `ticks` in names unless it means raw simulator ticks
 
 4. Define agents.
    - master/initiator, slave/responder, source/sink, tx/rx, monitor
@@ -1226,6 +2173,7 @@ When creating a new reusable VIP, do this in order:
 5. Define scoreboards.
    - functional expected vs observed
    - rules/protocol legality
+   - timestamp type: `test::sim_tick_t`
    - default strictness
    - warn-only behavior
    - end-of-case checks
@@ -1239,6 +2187,7 @@ When creating a new reusable VIP, do this in order:
    - top README
    - agent README
    - scoreboard README
+   - RapidVPI API usage examples if custom helpers wrap awaiters
 
 8. Define minimum compile smoke.
    - headers include cleanly
@@ -1250,17 +2199,17 @@ When creating a new reusable VIP, do this in order:
    - one-shot injection APIs
    - history capture
    - trace config
-   - backwards-compatible constructors
+   - backwards-compatible constructors once stable
 
 10. Keep version one small.
-   - Make the skeleton correct.
-   - Implement the first real path.
-   - Add future hooks only where they avoid API churn.
-   - Do not bloat first version with every possible feature.
+    - Make the skeleton correct.
+    - Implement the first real path.
+    - Add future hooks only where they avoid API churn.
+    - Do not bloat first version with every possible feature.
 
 ---
 
-## 20. Example target shape for `vip_uart`
+## 22. Example target shape for `vip_uart`
 
 First version should be minimal but extensible.
 
@@ -1332,8 +2281,8 @@ struct UartParams {
     unsigned stop_bits = 1;
     bool parity_enable = false;
     bool parity_odd = false;
-    unsigned bit_ticks = 16;
-    unsigned sample_tick = 8;
+    unsigned bit_clks = 16;
+    unsigned sample_clk_index = 8;
     bool idle_high = true;
 };
 
@@ -1341,8 +2290,8 @@ struct UartFrame {
     std::uint8_t data = 0;
     bool parity_error = false;
     bool framing_error = false;
-    double start_time_ns = 0.0;
-    double end_time_ns = 0.0;
+    test::sim_tick_t start_tick = 0;
+    test::sim_tick_t end_tick = 0;
 };
 ```
 
@@ -1351,9 +2300,9 @@ Suggested TX API:
 ```cpp
 class UartTx {
 public:
-    using RunTask = TestBase::RunTask;
+    using RunTask = test::TestBase::RunTask;
 
-    UartTx(TestBase& tb,
+    UartTx(test::TestBase& tb,
            std::vector<std::string> ports,
            UartParams params = UartParams{},
            std::string reset_name = "rst_n");
@@ -1364,9 +2313,9 @@ public:
 
     unsigned enqueue_byte(const std::string& port, std::uint8_t data);
     unsigned enqueue_bytes(const std::string& port, const std::vector<std::uint8_t>& data);
-    RunTask wait_done(unsigned ticket);
+    test::TestBase::RunUserTask wait_done(unsigned ticket);
 
-    void set_inter_frame_gap_ticks(const std::string& port, unsigned ticks);
+    void set_inter_frame_gap_clks(const std::string& port, unsigned cycles);
     void arm_next_framing_error(const std::string& port);
 };
 ```
@@ -1376,9 +2325,9 @@ Suggested RX API:
 ```cpp
 class UartRx {
 public:
-    using RunTask = TestBase::RunTask;
+    using RunTask = test::TestBase::RunTask;
 
-    UartRx(TestBase& tb,
+    UartRx(test::TestBase& tb,
            std::vector<std::string> ports,
            UartParams params = UartParams{},
            std::string reset_name = "rst_n");
@@ -1410,7 +2359,9 @@ public:
     void expect_byte(const std::string& port, std::uint8_t data);
     void expect_bytes(const std::string& port, const std::vector<std::uint8_t>& data);
 
-    void observe_frame(const std::string& port, const UartFrame& frame);
+    void observe_frame(const std::string& port,
+                       const UartFrame& frame,
+                       test::sim_tick_t time_tick);
 };
 ```
 
@@ -1420,7 +2371,7 @@ Do not implement RTS/CTS by changing the stable TX/RX API later. Add it as optio
 
 ---
 
-## 21. Anti-patterns
+## 23. Anti-patterns
 
 Avoid these:
 
@@ -1429,7 +2380,7 @@ Avoid these:
 - hardcoding one DUT's signal names into reusable VIP
 - making testcases manually drive valid-ready buses when an agent exists
 - putting DUT command/status layout into a protocol-generic VIP
-- changing existing constructors when a setter or config object would preserve compatibility
+- changing existing constructors when a setter or config object would preserve compatibility in a stable VIP
 - turning strict new checks on by default and breaking old tests unexpectedly
 - using `getNum()` for wide buses
 - using bus-equality waits that can stall
@@ -1439,3 +2390,8 @@ Avoid these:
 - creating nested git submodules inside `ext/`
 - hiding all implementation in one huge header
 - making README stale after adding APIs
+- naming raw tick timestamps as `time_ns`
+- using old implicit unit APIs such as `getCoWrite(0)`, `getCoRead(0)`, `getCoWrite(10.0)`, or `getTime()`
+- using protocol-local `*_ticks` names when the value is really clock cycles
+- calling `test::detail::*` helpers from reusable VIP code
+- scattering direct `vpi_get_time()` conversions across agents or scoreboards

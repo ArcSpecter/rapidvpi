@@ -316,8 +316,8 @@ Top-level `README.md` must include DUT purpose, supported interfaces, project st
 RapidVPI uses coroutine awaiters for simulator interaction:
 
 ```cpp
-auto w = test.getCoWrite(0);
-auto r = test.getCoRead(0);
+auto w = test.getCoWrite();
+auto r = test.getCoRead();
 auto c = test.getCoChange(clk, 1);
 ```
 
@@ -330,7 +330,7 @@ RO means read-only observation through `getCoRead()`, `getCoChange()`, or clock 
 Core rule:
 
 ```text
-After any RO await, do not assume a following getCoWrite(0) affects the same RTL sampling edge that was just observed.
+After any RO await, do not assume a following getCoWrite() affects the same RTL sampling edge that was just observed.
 ```
 
 Safe mental model:
@@ -350,12 +350,12 @@ A waveform can show final settled values at a timestamp while RTL sampled earlie
 Avoid patterns that assume a write after RO changes the already-sampled edge:
 
 ```cpp
-auto rd = test.getCoRead(0);
+auto rd = test.getCoRead();
 rd.read(ready);
 co_await rd;
 
 if (rd.getNum(ready)) {
-    auto w = test.getCoWrite(0);
+    auto w = test.getCoWrite();
     w.write(valid, 0);
     co_await w;
 }
@@ -399,7 +399,7 @@ edge = 1: rising/high edge
 edge = 0: falling/low edge
 ```
 
-After `clock()`, do not assume a following `getCoWrite(0)` affects the edge that just happened.
+After `clock()`, do not assume a following `getCoWrite()` affects the edge that just happened.
 
 ### 9.2 `clock_to_write(cycles, edge)`
 
@@ -458,7 +458,7 @@ Common pattern:
 
 ```cpp
 {
-    auto w = test.getCoWrite(0);
+    auto w = test.getCoWrite();
     axi::write_bitvec(w, cmd_data_net, cmd_word, CMD_W);
     w.write(cmd_valid_net, 0);
     co_await w;
@@ -467,7 +467,7 @@ Common pattern:
 co_await test.utils.write_barrier();
 
 {
-    auto w = test.getCoWrite(0);
+    auto w = test.getCoWrite();
     axi::write_bitvec(w, cmd_data_net, cmd_word, CMD_W);
     w.write(cmd_valid_net, 1);
     co_await w;
@@ -499,7 +499,7 @@ Use this for command/status-style valid-ready payloads, especially when `ready` 
 co_await test.utils.clock_to_write(1, 0);
 
 {
-    auto w = test.getCoWrite(0);
+    auto w = test.getCoWrite();
     axi::write_bitvec(w, cmd_data_net, cmd_word, CMD_W);
     w.write(cmd_valid_net, 0);
     co_await w;
@@ -508,7 +508,7 @@ co_await test.utils.clock_to_write(1, 0);
 co_await test.utils.write_barrier();
 
 {
-    auto w = test.getCoWrite(0);
+    auto w = test.getCoWrite();
     axi::write_bitvec(w, cmd_data_net, cmd_word, CMD_W);
     w.write(cmd_valid_net, 1);
     co_await w;
@@ -519,7 +519,7 @@ Then wait for a sampled handshake edge:
 
 ```cpp
 while (true) {
-    auto rd = test.getCoRead(0);
+    auto rd = test.getCoRead();
     rd.read(rst_n);
     rd.read(cmd_valid_net);
     rd.read(cmd_ready_net);
@@ -547,7 +547,7 @@ Clear after the accepting edge:
 co_await test.utils.clock_to_write(1, 0);
 
 {
-    auto w = test.getCoWrite(0);
+    auto w = test.getCoWrite();
     w.write(cmd_valid_net, 0);
     axi::write_bitvec(w, cmd_data_net, axi::AxiBitVec::zero(CMD_W), CMD_W);
     co_await w;
@@ -559,7 +559,7 @@ co_await test.utils.clock_to_write(1, 0);
 Avoid this for immediately-ready command channels:
 
 ```cpp
-auto w = test.getCoWrite(0);
+auto w = test.getCoWrite();
 axi::write_bitvec(w, cmd_data_net, cmd_word, CMD_W);
 w.write(cmd_valid_net, 1);
 co_await w;

@@ -1,25 +1,3 @@
-// MIT License
-
-// Copyright (c) 2026 Rovshan Rustamov
-
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-
-// The above copyright notice and this permission notice shall be included in all
-// copies or substantial portions of the Software.
-
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-// SOFTWARE.
-
 `default_nettype none
 
 // ----------------------------------------------------------------------------
@@ -48,10 +26,7 @@ module uart_core #(
     // ================================================================
     // DEBUG CONTROL
     // ================================================================
-    parameter bit RTL_DBG = 1'b1,
-    parameter bit RTL_DBG_TIME_NS = 1'b1,
-    parameter bit RTL_DBG_TIME_US = 1'b0,
-    parameter bit RTL_DBG_TIME_MS = 1'b0
+    parameter bit RTL_DBG = 1'b1
 ) (
     input wire clk,
     input wire rst_n,
@@ -147,35 +122,16 @@ module uart_core #(
   logic                      flow_cts_blocked;
 
 `ifndef SYNTHESIS
-  localparam string RTL_DBG_TIMEUNIT_STR = RTL_DBG_TIME_MS ? "ms" :
-                                           RTL_DBG_TIME_US ? "us" :
-                                           RTL_DBG_TIME_NS ? "ns" : "ticks";
-
   logic dbg_reset_seen_q;
   logic dbg_cfg_enable_q;
   logic dbg_cfg_rx_enable_q;
   logic dbg_cfg_tx_enable_q;
   logic dbg_cfg_hw_flow_enable_q;
   logic dbg_cts_blocked_q;
-
-  function automatic real rtl_dbg_time();
-    begin
-      if (RTL_DBG_TIME_MS) begin
-        rtl_dbg_time = $realtime / 1_000_000.0;
-      end else if (RTL_DBG_TIME_US) begin
-        rtl_dbg_time = $realtime / 1_000.0;
-      end else begin
-        rtl_dbg_time = $realtime;
-      end
-    end
-  endfunction
 `endif
 
   uart_rx_sync #(
-      .RTL_DBG        (RTL_DBG),
-      .RTL_DBG_TIME_NS(RTL_DBG_TIME_NS),
-      .RTL_DBG_TIME_US(RTL_DBG_TIME_US),
-      .RTL_DBG_TIME_MS(RTL_DBG_TIME_MS)
+      .RTL_DBG(RTL_DBG)
   ) u_rx_sync (
       .clk      (clk),
       .rst_n    (rst_n),
@@ -186,10 +142,7 @@ module uart_core #(
   uart_baud_gen #(
       .BAUD_ACC_W     (BAUD_ACC_W),
       .OVERSAMPLE     (OVERSAMPLE),
-      .RTL_DBG        (RTL_DBG),
-      .RTL_DBG_TIME_NS(RTL_DBG_TIME_NS),
-      .RTL_DBG_TIME_US(RTL_DBG_TIME_US),
-      .RTL_DBG_TIME_MS(RTL_DBG_TIME_MS)
+      .RTL_DBG        (RTL_DBG)
   ) u_baud_gen (
       .clk            (clk),
       .rst_n          (rst_n),
@@ -201,10 +154,7 @@ module uart_core #(
 
   uart_rx #(
       .OVERSAMPLE     (OVERSAMPLE),
-      .RTL_DBG        (RTL_DBG),
-      .RTL_DBG_TIME_NS(RTL_DBG_TIME_NS),
-      .RTL_DBG_TIME_US(RTL_DBG_TIME_US),
-      .RTL_DBG_TIME_MS(RTL_DBG_TIME_MS)
+      .RTL_DBG        (RTL_DBG)
   ) u_rx (
       .clk                  (clk),
       .rst_n                (rst_n),
@@ -234,10 +184,7 @@ module uart_core #(
   uart_byte_fifo #(
       .DATA_W         (RX_FIFO_DATA_W),
       .DEPTH          (RX_FIFO_DEPTH),
-      .RTL_DBG        (RTL_DBG),
-      .RTL_DBG_TIME_NS(RTL_DBG_TIME_NS),
-      .RTL_DBG_TIME_US(RTL_DBG_TIME_US),
-      .RTL_DBG_TIME_MS(RTL_DBG_TIME_MS)
+      .RTL_DBG        (RTL_DBG)
   ) u_rx_fifo (
       .clk       (clk),
       .rst_n     (rst_n),
@@ -269,10 +216,7 @@ module uart_core #(
   uart_byte_fifo #(
       .DATA_W         (TX_FIFO_DATA_W),
       .DEPTH          (TX_FIFO_DEPTH),
-      .RTL_DBG        (RTL_DBG),
-      .RTL_DBG_TIME_NS(RTL_DBG_TIME_NS),
-      .RTL_DBG_TIME_US(RTL_DBG_TIME_US),
-      .RTL_DBG_TIME_MS(RTL_DBG_TIME_MS)
+      .RTL_DBG        (RTL_DBG)
   ) u_tx_fifo (
       .clk       (clk),
       .rst_n     (rst_n),
@@ -293,10 +237,7 @@ module uart_core #(
   assign tx_fifo_pop_ready = tx_start;
 
   uart_tx #(
-      .RTL_DBG        (RTL_DBG),
-      .RTL_DBG_TIME_NS(RTL_DBG_TIME_NS),
-      .RTL_DBG_TIME_US(RTL_DBG_TIME_US),
-      .RTL_DBG_TIME_MS(RTL_DBG_TIME_MS)
+      .RTL_DBG(RTL_DBG)
   ) u_tx (
       .clk               (clk),
       .rst_n             (rst_n),
@@ -322,10 +263,7 @@ module uart_core #(
           .CTS_ACTIVE_LOW    (CTS_ACTIVE_LOW),
           .RTS_DEASSERT_LEVEL(RTS_DEASSERT_LEVEL),
           .RTS_ASSERT_LEVEL  (RTS_ASSERT_LEVEL),
-          .RTL_DBG           (RTL_DBG),
-          .RTL_DBG_TIME_NS   (RTL_DBG_TIME_NS),
-          .RTL_DBG_TIME_US   (RTL_DBG_TIME_US),
-          .RTL_DBG_TIME_MS   (RTL_DBG_TIME_MS)
+          .RTL_DBG           (RTL_DBG)
       ) u_hw_flow_ctrl (
           .clk               (clk),
           .rst_n             (rst_n),
@@ -368,9 +306,8 @@ module uart_core #(
       if (RTL_DBG) begin
         if (!dbg_reset_seen_q) begin
           `DPRINT($display(
-                  "[RTL][INFO][%0.0f %s] %m: UART core debug enabled, baud_acc_w=%0d oversample=%0d rx_fifo_depth=%0d tx_fifo_depth=%0d has_rts_cts=%0b",
-                  rtl_dbg_time(),
-                  RTL_DBG_TIMEUNIT_STR,
+                  "[RTL][INFO][%0t] %m: UART core debug enabled, baud_acc_w=%0d oversample=%0d rx_fifo_depth=%0d tx_fifo_depth=%0d has_rts_cts=%0b",
+                  $time,
                   BAUD_ACC_W,
                   OVERSAMPLE,
                   RX_FIFO_DEPTH,
@@ -384,9 +321,8 @@ module uart_core #(
             (cfg_tx_enable != dbg_cfg_tx_enable_q) ||
             (cfg_hw_flow_enable != dbg_cfg_hw_flow_enable_q)) begin
           `DPRINT($display(
-                  "[RTL][INFO][%0.0f %s] %m: config enables changed, core=%0b rx=%0b tx=%0b hw_flow=%0b",
-                  rtl_dbg_time(),
-                  RTL_DBG_TIMEUNIT_STR,
+                  "[RTL][INFO][%0t] %m: config enables changed, core=%0b rx=%0b tx=%0b hw_flow=%0b",
+                  $time,
                   cfg_enable,
                   cfg_rx_enable,
                   cfg_tx_enable,
@@ -396,27 +332,24 @@ module uart_core #(
 
         if (ctrl_rx_fifo_clear) begin
           `DPRINT($display(
-                  "[RTL][INFO][%0.0f %s] %m: RX FIFO clear requested, level_before=%0d",
-                  rtl_dbg_time(),
-                  RTL_DBG_TIMEUNIT_STR,
+                  "[RTL][INFO][%0t] %m: RX FIFO clear requested, level_before=%0d",
+                  $time,
                   rx_fifo_level_w
                   ));
         end
 
         if (ctrl_tx_fifo_clear) begin
           `DPRINT($display(
-                  "[RTL][INFO][%0.0f %s] %m: TX FIFO clear requested, level_before=%0d",
-                  rtl_dbg_time(),
-                  RTL_DBG_TIMEUNIT_STR,
+                  "[RTL][INFO][%0t] %m: TX FIFO clear requested, level_before=%0d",
+                  $time,
                   tx_fifo_level_w
                   ));
         end
 
         if (rx_fifo_push_valid && rx_fifo_push_ready) begin
           `DPRINT($display(
-                  "[RTL][INFO][%0.0f %s] %m: RX record queued, data=0x%02h frame=%0b parity=%0b break=%0b rx_level_before=%0d",
-                  rtl_dbg_time(),
-                  RTL_DBG_TIMEUNIT_STR,
+                  "[RTL][INFO][%0t] %m: RX record queued, data=0x%02h frame=%0b parity=%0b break=%0b rx_level_before=%0d",
+                  $time,
                   rx_char_data,
                   rx_char_frame_error,
                   rx_char_parity_error,
@@ -427,9 +360,8 @@ module uart_core #(
 
         if (event_rx_overrun) begin
           `DPRINT($display(
-                  "[RTL][WARN][%0.0f %s] %m: RX overrun, dropping data=0x%02h frame=%0b parity=%0b break=%0b rx_level=%0d",
-                  rtl_dbg_time(),
-                  RTL_DBG_TIMEUNIT_STR,
+                  "[RTL][WARN][%0t] %m: RX overrun, dropping data=0x%02h frame=%0b parity=%0b break=%0b rx_level=%0d",
+                  $time,
                   rx_char_data,
                   rx_char_frame_error,
                   rx_char_parity_error,
@@ -440,9 +372,8 @@ module uart_core #(
 
         if (rx_byte_valid && rx_byte_ready) begin
           `DPRINT($display(
-                  "[RTL][INFO][%0.0f %s] %m: RX record consumed, data=0x%02h frame=%0b parity=%0b break=%0b rx_level_before=%0d",
-                  rtl_dbg_time(),
-                  RTL_DBG_TIMEUNIT_STR,
+                  "[RTL][INFO][%0t] %m: RX record consumed, data=0x%02h frame=%0b parity=%0b break=%0b rx_level_before=%0d",
+                  $time,
                   rx_byte_data,
                   rx_byte_frame_error,
                   rx_byte_parity_error,
@@ -453,9 +384,8 @@ module uart_core #(
 
         if (tx_start) begin
           `DPRINT($display(
-                  "[RTL][INFO][%0.0f %s] %m: TX launch from FIFO, data=0x%02h tx_level_before=%0d cts_active=%0b",
-                  rtl_dbg_time(),
-                  RTL_DBG_TIMEUNIT_STR,
+                  "[RTL][INFO][%0t] %m: TX launch from FIFO, data=0x%02h tx_level_before=%0d cts_active=%0b",
+                  $time,
                   tx_fifo_pop_data,
                   tx_fifo_level_w,
                   flow_cts_active
@@ -464,9 +394,8 @@ module uart_core #(
 
         if (flow_cts_blocked && !dbg_cts_blocked_q) begin
           `DPRINT($display(
-                  "[RTL][WARN][%0.0f %s] %m: TX launch pending but blocked by CTS, tx_level=%0d",
-                  rtl_dbg_time(),
-                  RTL_DBG_TIMEUNIT_STR,
+                  "[RTL][WARN][%0t] %m: TX launch pending but blocked by CTS, tx_level=%0d",
+                  $time,
                   tx_fifo_level_w
                   ));
         end

@@ -1,25 +1,3 @@
-// MIT License
-
-// Copyright (c) 2026 Rovshan Rustamov
-
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-
-// The above copyright notice and this permission notice shall be included in all
-// copies or substantial portions of the Software.
-
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-// SOFTWARE.
-
 `default_nettype none
 
 // ----------------------------------------------------------------------------
@@ -39,10 +17,7 @@ module uart_tx #(
   // ================================================================
   // DEBUG CONTROL
   // ================================================================
-  parameter bit RTL_DBG         = 1'b0,
-  parameter bit RTL_DBG_TIME_NS = 1'b1,
-  parameter bit RTL_DBG_TIME_US = 1'b0,
-  parameter bit RTL_DBG_TIME_MS = 1'b0
+  parameter bit RTL_DBG = 1'b1
 ) (
   input  wire       clk,
   input  wire       rst_n,
@@ -82,24 +57,6 @@ module uart_tx #(
   logic       uart_tx_q;
   logic       event_tx_done_q;
   logic [2:0] next_bit_index;
-
-`ifndef SYNTHESIS
-  localparam string RTL_DBG_TIMEUNIT_STR = RTL_DBG_TIME_MS ? "ms" :
-                                           RTL_DBG_TIME_US ? "us" :
-                                           RTL_DBG_TIME_NS ? "ns" : "ticks";
-
-  function automatic real rtl_dbg_time();
-    begin
-      if (RTL_DBG_TIME_MS) begin
-        rtl_dbg_time = $realtime / 1_000_000.0;
-      end else if (RTL_DBG_TIME_US) begin
-        rtl_dbg_time = $realtime / 1_000.0;
-      end else begin
-        rtl_dbg_time = $realtime;
-      end
-    end
-  endfunction
-`endif
 
   assign next_bit_index = bit_index_q[2:0] + 3'd1;
 
@@ -204,9 +161,8 @@ module uart_tx #(
 `ifndef SYNTHESIS
             if (RTL_DBG) begin
               `DPRINT($display(
-                "[RTL][INFO][%0.0f %s] %m: TX character started, data=0x%02h data_bits=%0d stop_bits=%0d parity_mode=0x%0h parity_bit=%0b",
-                rtl_dbg_time(),
-                RTL_DBG_TIMEUNIT_STR,
+                "[RTL][INFO][%0t] %m: TX character started, data=0x%02h data_bits=%0d stop_bits=%0d parity_mode=0x%0h parity_bit=%0b",
+                $time,
                 tx_data,
                 decode_data_bits(cfg_data_bits),
                 decode_stop_bits(cfg_stop_bits),
@@ -221,9 +177,8 @@ module uart_tx #(
 `ifndef SYNTHESIS
             if (RTL_DBG) begin
               `DPRINT($display(
-                "[RTL][WARN][%0.0f %s] %m: TX start ignored while disabled, cfg_enable=%0b cfg_tx_enable=%0b",
-                rtl_dbg_time(),
-                RTL_DBG_TIMEUNIT_STR,
+                "[RTL][WARN][%0t] %m: TX start ignored while disabled, cfg_enable=%0b cfg_tx_enable=%0b",
+                $time,
                 cfg_enable,
                 cfg_tx_enable
               ));
@@ -278,9 +233,8 @@ module uart_tx #(
 `ifndef SYNTHESIS
               if (RTL_DBG) begin
                 `DPRINT($display(
-                  "[RTL][INFO][%0.0f %s] %m: TX character completed, data=0x%02h stop_bits=%0d",
-                  rtl_dbg_time(),
-                  RTL_DBG_TIMEUNIT_STR,
+                  "[RTL][INFO][%0t] %m: TX character completed, data=0x%02h stop_bits=%0d",
+                  $time,
                   data_q,
                   active_stop_bits_q
                 ));

@@ -1,25 +1,3 @@
-// MIT License
-
-// Copyright (c) 2026 Rovshan Rustamov
-
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-
-// The above copyright notice and this permission notice shall be included in all
-// copies or substantial portions of the Software.
-
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-// SOFTWARE.
-
 `default_nettype none
 
 // ----------------------------------------------------------------------------
@@ -44,10 +22,7 @@ module uart_hw_flow_ctrl #(
   // ================================================================
   // DEBUG CONTROL
   // ================================================================
-  parameter bit RTL_DBG         = 1'b0,
-  parameter bit RTL_DBG_TIME_NS = 1'b1,
-  parameter bit RTL_DBG_TIME_US = 1'b0,
-  parameter bit RTL_DBG_TIME_MS = 1'b0
+  parameter bit RTL_DBG = 1'b1
 ) (
   input  wire                    clk,
   input  wire                    rst_n,
@@ -73,26 +48,10 @@ module uart_hw_flow_ctrl #(
   logic                       rts_active_selected;
 
 `ifndef SYNTHESIS
-  localparam string RTL_DBG_TIMEUNIT_STR = RTL_DBG_TIME_MS ? "ms" :
-                                           RTL_DBG_TIME_US ? "us" :
-                                           RTL_DBG_TIME_NS ? "ns" : "ticks";
-
   logic dbg_cfg_hw_flow_enable_q;
   logic dbg_cts_active_q;
   logic dbg_rts_active_q;
   logic dbg_cts_blocked_q;
-
-  function automatic real rtl_dbg_time();
-    begin
-      if (RTL_DBG_TIME_MS) begin
-        rtl_dbg_time = $realtime / 1_000_000.0;
-      end else if (RTL_DBG_TIME_US) begin
-        rtl_dbg_time = $realtime / 1_000.0;
-      end else begin
-        rtl_dbg_time = $realtime;
-      end
-    end
-  endfunction
 `endif
 
   always_ff @(posedge clk) begin
@@ -140,35 +99,31 @@ module uart_hw_flow_ctrl #(
       if (RTL_DBG) begin
         if (cfg_hw_flow_enable && !dbg_cfg_hw_flow_enable_q) begin
           `DPRINT($display(
-            "[RTL][INFO][%0.0f %s] %m: hardware flow control enabled, rx_level=%0d",
-            rtl_dbg_time(),
-            RTL_DBG_TIMEUNIT_STR,
+            "[RTL][INFO][%0t] %m: hardware flow control enabled, rx_level=%0d",
+            $time,
             rx_fifo_level
           ));
         end
 
         if (!cfg_hw_flow_enable && dbg_cfg_hw_flow_enable_q) begin
           `DPRINT($display(
-            "[RTL][INFO][%0.0f %s] %m: hardware flow control disabled, CTS ignored",
-            rtl_dbg_time(),
-            RTL_DBG_TIMEUNIT_STR
+            "[RTL][INFO][%0t] %m: hardware flow control disabled, CTS ignored",
+            $time
           ));
         end
 
         if (cts_active != dbg_cts_active_q) begin
           `DPRINT($display(
-            "[RTL][INFO][%0.0f %s] %m: CTS active changed to %0b",
-            rtl_dbg_time(),
-            RTL_DBG_TIMEUNIT_STR,
+            "[RTL][INFO][%0t] %m: CTS active changed to %0b",
+            $time,
             cts_active
           ));
         end
 
         if (rts_active != dbg_rts_active_q) begin
           `DPRINT($display(
-            "[RTL][INFO][%0.0f %s] %m: RTS active changed to %0b, rx_level=%0d thresholds assert=%0d deassert=%0d",
-            rtl_dbg_time(),
-            RTL_DBG_TIMEUNIT_STR,
+            "[RTL][INFO][%0t] %m: RTS active changed to %0b, rx_level=%0d thresholds assert=%0d deassert=%0d",
+            $time,
             rts_active,
             rx_fifo_level,
             RTS_ASSERT_LEVEL,
@@ -178,17 +133,15 @@ module uart_hw_flow_ctrl #(
 
         if (cts_blocked && !dbg_cts_blocked_q) begin
           `DPRINT($display(
-            "[RTL][WARN][%0.0f %s] %m: TX launch blocked by inactive CTS",
-            rtl_dbg_time(),
-            RTL_DBG_TIMEUNIT_STR
+            "[RTL][WARN][%0t] %m: TX launch blocked by inactive CTS",
+            $time
           ));
         end
 
         if (!cts_blocked && dbg_cts_blocked_q) begin
           `DPRINT($display(
-            "[RTL][INFO][%0.0f %s] %m: CTS block cleared",
-            rtl_dbg_time(),
-            RTL_DBG_TIMEUNIT_STR
+            "[RTL][INFO][%0t] %m: CTS block cleared",
+            $time
           ));
         end
       end

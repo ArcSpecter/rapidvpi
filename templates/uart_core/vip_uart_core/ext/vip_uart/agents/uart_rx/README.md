@@ -14,7 +14,8 @@
 
 The agent decodes data bits, optional parity, stop bits, framing errors,
 parity errors, and simple break conditions. Captured frames can be sent to
-`ScbUartStream` and `ScbUartRules`.
+`ScbUartStream` and `ScbUartRules`. Captured frame history stores raw
+simulator timestamps in `start_tick` and `end_tick`.
 
 ## 2. Port map
 

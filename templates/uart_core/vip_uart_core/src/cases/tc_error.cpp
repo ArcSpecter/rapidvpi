@@ -1,25 +1,3 @@
-// MIT License
-
-// Copyright (c) 2026 Rovshan Rustamov
-
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-
-// The above copyright notice and this permission notice shall be included in all
-// copies or substantial portions of the Software.
-
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-// SOFTWARE.
-
 #include "tc_error.hpp"
 
 #include <cstddef>
@@ -36,7 +14,7 @@
 namespace test {
 namespace {
 
-static constexpr unsigned ERROR_STATUS_TIMEOUT_CYCLES = BASIC_UART_BIT_TICKS * 64u;
+static constexpr unsigned ERROR_STATUS_TIMEOUT_CYCLES = BASIC_UART_BIT_CLKS * 64u;
 
 [[nodiscard]] vip::uart::UartParity parity_from_cfg(const unsigned mode) {
     switch (mode) {
@@ -101,7 +79,7 @@ TestBase::RunUserTask send_rx_byte(Test& test,
                                    const vip::uart::UartParams& params) {
     const unsigned ticket = test.uart_peer_tx.enqueue_byte(uart_rx_port_name, data);
     co_await test.uart_peer_tx.wait_done(ticket);
-    co_await wait_cycles(test, params.bit_ticks * 4u);
+    co_await wait_cycles(test, params.bit_clks * 4u);
     co_return;
 }
 
@@ -313,7 +291,7 @@ TestBase::RunUserTask subcase_break_detect(Test& test) {
     co_await expect_rx_record(test, 0x00u, true, false, true, "break-like frame");
     co_await expect_event_delta(test, before_break, 0u, 1u, 0u, 1u, "break-like frame");
 
-    co_await wait_cycles(test, params.frame_ticks() + (params.bit_ticks * 2u));
+    co_await wait_cycles(test, params.frame_clks() + (params.bit_clks * 2u));
 
     const UartCoreEventCounts before_recovery = test.core_intf.event_counts();
     co_await send_rx_byte(test, 0x5au, params);
@@ -381,7 +359,6 @@ TestBase::RunUserTask subcase_error_metadata_ordering(Test& test) {
 } // namespace
 
 TestBase::RunUserTask tc_error(Test& test) {
-    vip::common::log_line("tc_error", "INFO", "start");
 
     co_await subcase_clean_baseline(test);
     co_await subcase_even_parity_error(test);
@@ -395,7 +372,6 @@ TestBase::RunUserTask tc_error(Test& test) {
         test.scb.note_pass("tc_error RX error behavior completed");
     }
 
-    vip::common::log_line("tc_error", "INFO", "end");
     co_return;
 }
 

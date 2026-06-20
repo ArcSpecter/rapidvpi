@@ -23,7 +23,7 @@ Version one supports:
 - 5, 6, 7, or 8 data bits
 - one or two stop bits
 - none, even, or odd parity
-- configurable bit timing in parent testbench clock ticks
+- configurable bit timing in parent testbench clock edges
 - optional TX start-edge phase offsets with time-based bit timing
 - TX serial driving
 - RX serial sampling and decode
@@ -55,20 +55,20 @@ vip::uart::UartParams p;
 p.data_bits = 8;
 p.stop_bits = 1;
 p.parity = vip::uart::UartParity::NONE;
-p.bit_ticks = 16;
-p.sample_tick = 8;
+p.bit_clks = 16;
+p.sample_clk_index = 8;
 p.idle_high = true;
 p.cts_active_low = true;
 p.rts_active_low = true;
 ```
 
-`bit_ticks` is measured in parent testbench clock rising edges.
+`bit_clks` is measured in parent testbench clock rising edges.
 
 For deterministic asynchronous-start testing, `UartTx` also provides
 `enqueue_byte_with_phase()` and `enqueue_bytes_with_phase()`. These APIs align
 the first start bit to a known clock edge plus a picosecond phase offset and
 then drive the frame using baud-derived time delays instead of clock-edge
-ticks.
+counts.
 
 `UartTx`, `UartRx`, and `ScbUartStream` also provide `set_params(...)` for
 testcases that need to change UART framing or timing while the line is idle.
@@ -115,7 +115,7 @@ co_await rx.drive_cts_now("uart0", false);
 ## 6. Example wiring
 
 ```cpp
-vip::common::Scoreboard scb;
+vip::common::Scoreboard scb(*this);
 vip::uart::UartParams uart_params;
 vip::uart::ScbUartStream scb_uart(scb, uart_params);
 vip::uart::ScbUartRules scb_uart_rules(scb);
@@ -132,7 +132,7 @@ registerTest("uart_peer_rx", [this]() { return uart_peer_rx.agent(0).handle; });
 
 ## 7. Limitations
 
-The default TX/RX path uses testbench clock ticks for UART timing. The
+The default TX/RX path uses testbench clock edges for UART timing. The
 phase-offset TX API uses ideal baud-derived time delays for deterministic
 sub-clock start-edge placement. The VIP does not model baud-rate drift, jitter,
 analog line effects, nine-bit UART modes, or automatic RTS threshold behavior.

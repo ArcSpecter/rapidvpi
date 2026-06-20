@@ -1,25 +1,3 @@
-# MIT License
-#
-# Copyright (c) 2026 Rovshan Rustamov
-#
-# Permission is hereby granted, free of charge, to any person obtaining a copy
-# of this software and associated documentation files (the "Software"), to deal
-# in the Software without restriction, including without limitation the rights
-# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-# copies of the Software, and to permit persons to whom the Software is
-# furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included in all
-# copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-# SOFTWARE.
-
 cmake_minimum_required(VERSION 3.10)
 
 project(rtl_uart_core VERSION 0.0.1 LANGUAGES NONE)
@@ -69,6 +47,7 @@ add_custom_target(lint
 )
 
 set(VLOG_OPTIONS "${CMAKE_SOURCE_DIR}/scripts/sim/questa/vlog_options")
+set(VSIM_OPTIONS "${CMAKE_SOURCE_DIR}/scripts/sim/questa/vsim_options")
 set(QUESTA_RUN_SCRIPT "${CMAKE_SOURCE_DIR}/scripts/sim/questa/questa_run.tcl")
 set(QUESTA_RUN_GUI_SCRIPT "${CMAKE_SOURCE_DIR}/scripts/sim/questa/questa_run_gui.tcl")
 
@@ -79,9 +58,6 @@ set(WORK_LIB "work")
 set(WORK_LIB_DIR "${QUESTA_SIM_DIR}/${WORK_LIB}")
 
 set(QUESTA_INIT_COMMANDS)
-# If you need external submodule addition add it as below example:
-# include(${EXT_DIR}/rtl_xxx/scripts/cmake/questa_module.cmake)
-
 set(QUESTA_RTL_VLOG_COMMANDS)
 
 foreach(RTL_SOURCE IN LISTS RTL_SOURCES)
@@ -121,6 +97,7 @@ add_custom_target(
     sim_questa_run
     COMMAND env LD_PRELOAD=/usr/lib64/libstdc++.so.6
     vsim -c
+    -f ${VSIM_OPTIONS}
     ${RTL_TOP_MODULE}
     -pli ${VPI_MODULE_NAME}
     -do ${QUESTA_RUN_SCRIPT}
@@ -133,6 +110,7 @@ add_custom_target(
     sim_questa_run_gui
     COMMAND env LD_PRELOAD=/usr/lib64/libstdc++.so.6
     vsim -gui
+    -f ${VSIM_OPTIONS}
     ${RTL_TOP_MODULE}
     -pli ${VPI_MODULE_NAME}
     -do ${QUESTA_RUN_GUI_SCRIPT}

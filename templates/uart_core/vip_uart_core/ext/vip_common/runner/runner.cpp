@@ -1,25 +1,3 @@
-// MIT License
-
-// Copyright (c) 2026 Rovshan Rustamov
-
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-
-// The above copyright notice and this permission notice shall be included in all
-// copies or substantial portions of the Software.
-
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-// SOFTWARE.
-
 // vip_common/runner/runner.cpp
 #include "vip_common/runner/runner.hpp"
 
@@ -27,21 +5,15 @@
 #include <deque>
 #include <unordered_set>
 
-#include <vpi_user.h>
-
 namespace vip::common {
 
-std::uint64_t Runner::sim_time_ns_() {
-    s_vpi_time t;
-    t.type = vpiSimTime;
-    t.high = 0;
-    t.low = 0;
-    vpi_get_time(nullptr, &t);
-    return (static_cast<std::uint64_t>(t.high) << 32) | static_cast<std::uint64_t>(t.low);
+sim_tick_t Runner::sim_time_ticks_() {
+    return sim_time_ticks();
 }
 
 void Runner::log_line_(const std::string& level, const std::string& msg) const {
-    log_ << "# [runner][" << level << "][" << sim_time_ns_() << "] " << msg << std::endl;
+    log_ << "# [runner][" << level << "][tick=" << sim_time_ticks_()
+         << "] " << msg << std::endl;
 }
 
 Runner::Runner(TestBase& tb, AfterAllHook after_all)
@@ -108,6 +80,11 @@ bool Runner::case_exists_(const std::string& name) const {
 }
 
 Runner::RunTask Runner::case_runner() {
+    const sim_tick_t runner_start_tick = sim_time_ticks_();
+    log_line_("INFO",
+              "vpi_precision_exp10=" + std::to_string(tb_.vpiTimePrecisionExp10())
+              + " tick_unit=" + tick_unit_label(tb_));
+
     if (cases_.empty()) {
         log_line_("WARN", "no cases registered.");
         if (after_all_) {
@@ -130,8 +107,6 @@ Runner::RunTask Runner::case_runner() {
     for (std::size_t k = 0; k < order.size(); ++k) {
         const CaseDesc& c = cases_[order[k]];
 
-        log_line_("INFO", "case " + std::to_string(k + 1) + "/" + std::to_string(order.size()) + ": " + c.name);
-
         if (!c.fn) {
             log_line_("FAIL", "case has no function: " + c.name);
             continue;
@@ -141,7 +116,20 @@ Runner::RunTask Runner::case_runner() {
             before_case_(c);
         }
 
+        const sim_tick_t case_start_tick = sim_time_ticks_();
+        log_line_("INFO",
+                  "case " + std::to_string(k + 1) + "/"
+                  + std::to_string(order.size()) + " start: " + c.name);
+
         co_await c.fn();
+
+        const sim_tick_t case_end_tick = sim_time_ticks_();
+        const sim_tick_t case_delta_tick = delta_ticks(case_start_tick, case_end_tick);
+        log_line_("INFO",
+                  "case " + std::to_string(k + 1) + "/"
+                  + std::to_string(order.size()) + " end: " + c.name
+                  + " delta_ticks=" + std::to_string(case_delta_tick)
+                  + " delta_ns=" + format_ns(ticks_to_ns(tb_, case_delta_tick)));
 
         if (after_case_) {
             after_case_(c);
@@ -153,7 +141,11 @@ Runner::RunTask Runner::case_runner() {
         after_all_();
     }
 
-    log_line_("INFO", "runner done.");
+    const sim_tick_t runner_end_tick = sim_time_ticks_();
+    const sim_tick_t runner_delta_tick = delta_ticks(runner_start_tick, runner_end_tick);
+    log_line_("INFO",
+              "runner done. total_delta_ticks=" + std::to_string(runner_delta_tick)
+              + " total_delta_ns=" + format_ns(ticks_to_ns(tb_, runner_delta_tick)));
     co_return;
 }
 

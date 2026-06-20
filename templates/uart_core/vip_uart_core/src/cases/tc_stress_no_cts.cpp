@@ -1,25 +1,3 @@
-// MIT License
-
-// Copyright (c) 2026 Rovshan Rustamov
-
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-
-// The above copyright notice and this permission notice shall be included in all
-// copies or substantial portions of the Software.
-
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-// SOFTWARE.
-
 #include "tc_stress_no_cts.hpp"
 
 // DUT parameter requirements for this testcase:
@@ -43,7 +21,7 @@
 namespace test {
 namespace {
 
-static constexpr unsigned STRESS_STATUS_TIMEOUT_CYCLES = BASIC_UART_BIT_TICKS * 96u;
+static constexpr unsigned STRESS_STATUS_TIMEOUT_CYCLES = BASIC_UART_BIT_CLKS * 96u;
 
 [[nodiscard]] vip::uart::UartParity parity_from_cfg(const unsigned mode) {
     switch (mode) {
@@ -91,7 +69,7 @@ TestBase::RunUserTask wait_cycles(Test& test, const unsigned cycles) {
 
 [[nodiscard]] unsigned tx_timeout_for(const vip::uart::UartParams& params,
                                       const std::size_t frames) {
-    return (params.frame_ticks() * static_cast<unsigned>(frames + 2u))
+    return (params.frame_clks() * static_cast<unsigned>(frames + 2u))
         + (HANDSHAKE_TIMEOUT_CYCLES * 4u);
 }
 
@@ -230,7 +208,7 @@ TestBase::RunUserTask send_rx_byte(Test& test,
                                    const vip::uart::UartParams& params) {
     const unsigned ticket = test.uart_peer_tx.enqueue_byte(uart_rx_port_name, data);
     co_await test.uart_peer_tx.wait_done(ticket);
-    co_await wait_cycles(test, params.bit_ticks * 4u);
+    co_await wait_cycles(test, params.bit_clks * 4u);
     co_return;
 }
 
@@ -239,7 +217,7 @@ TestBase::RunUserTask send_rx_bytes(Test& test,
                                     const vip::uart::UartParams& params) {
     const unsigned ticket = test.uart_peer_tx.enqueue_bytes(uart_rx_port_name, data);
     co_await test.uart_peer_tx.wait_done(ticket);
-    co_await wait_cycles(test, params.bit_ticks * 4u);
+    co_await wait_cycles(test, params.bit_clks * 4u);
     co_return;
 }
 
@@ -356,7 +334,7 @@ TestBase::RunUserTask subcase_simultaneous_rx_tx_small_burst(Test& test) {
     const unsigned rx_ticket = test.uart_peer_tx.enqueue_bytes(uart_rx_port_name, rx_data);
     co_await push_tx_bytes_with_gaps(test, tx_data, {0u, 2u, 0u, 3u, 1u, 0u});
     co_await test.uart_peer_tx.wait_done(rx_ticket);
-    co_await wait_cycles(test, params.bit_ticks * 4u);
+    co_await wait_cycles(test, params.bit_clks * 4u);
 
     co_await wait_rx_level(test, static_cast<unsigned>(rx_data.size()), "simultaneous RX fill");
     co_await wait_tx_frame_count(test, tx_data.size(), tx_timeout_for(params, tx_data.size()), "simultaneous TX");
@@ -426,7 +404,7 @@ TestBase::RunUserTask subcase_tx_gaps_pause_resume(Test& test) {
     co_await push_tx_bytes_with_gaps(test, first, {3u, 7u, 2u});
     co_await apply_stress_config(test, UART_PARITY_NONE, UART_STOP_1, UART_DATA_8, true, false);
     co_await push_tx_bytes_with_gaps(test, second, {4u, 1u, 0u});
-    co_await wait_cycles(test, params.frame_ticks() * 2u);
+    co_await wait_cycles(test, params.frame_clks() * 2u);
 
     UartCoreStatus disabled_status{};
     co_await wait_status(test,
@@ -435,7 +413,7 @@ TestBase::RunUserTask subcase_tx_gaps_pause_resume(Test& test) {
                          },
                          "TX pause disabled queued state",
                          &disabled_status,
-                         params.frame_ticks() * 3u);
+                         params.frame_clks() * 3u);
 
     co_await apply_stress_config(test);
     co_await wait_tx_frame_count(test, all.size(), tx_timeout_for(params, all.size()), "TX pause/resume");
@@ -544,7 +522,6 @@ TestBase::RunUserTask subcase_near_fifo_pressure_parallel(Test& test) {
 } // namespace
 
 TestBase::RunUserTask tc_stress_no_cts(Test& test) {
-    vip::common::log_line("tc_stress_no_cts", "INFO", "start");
 
     co_await subcase_simultaneous_rx_tx_small_burst(test);
     co_await subcase_rx_backpressure_delayed_popping(test);
@@ -556,7 +533,6 @@ TestBase::RunUserTask tc_stress_no_cts(Test& test) {
         test.scb.note_pass("tc_stress_no_cts mixed no-CTS stress completed");
     }
 
-    vip::common::log_line("tc_stress_no_cts", "INFO", "end");
     co_return;
 }
 

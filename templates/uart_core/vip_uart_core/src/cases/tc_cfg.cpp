@@ -1,25 +1,3 @@
-// MIT License
-
-// Copyright (c) 2026 Rovshan Rustamov
-
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-
-// The above copyright notice and this permission notice shall be included in all
-// copies or substantial portions of the Software.
-
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-// SOFTWARE.
-
 #include "tc_cfg.hpp"
 
 #include <cstddef>
@@ -99,7 +77,7 @@ TestBase::RunUserTask wait_cycles(Test& test, const unsigned cycles) {
 TestBase::RunUserTask wait_frame_margin(Test& test,
                                         const vip::uart::UartParams& params,
                                         const unsigned frames = 1u) {
-    co_await wait_cycles(test, (params.frame_ticks() * frames) + (params.bit_ticks * 4u));
+    co_await wait_cycles(test, (params.frame_clks() * frames) + (params.bit_clks * 4u));
     co_return;
 }
 
@@ -176,7 +154,7 @@ TestBase::RunUserTask send_rx_byte(Test& test,
                                    const vip::uart::UartParams& params) {
     const unsigned ticket = test.uart_peer_tx.enqueue_byte(uart_rx_port_name, data);
     co_await test.uart_peer_tx.wait_done(ticket);
-    co_await wait_cycles(test, params.bit_ticks * 4u);
+    co_await wait_cycles(test, params.bit_clks * 4u);
     co_return;
 }
 
@@ -203,7 +181,7 @@ TestBase::RunUserTask check_uart_tx_idle_high(Test& test,
                                               std::string label) {
     for (unsigned cycle = 0u; cycle < cycles; ++cycle) {
         co_await test.utils.clock(1, 1);
-        auto r = test.getCoRead(0);
+        auto r = test.getCoRead();
         r.read(uart_tx_o);
         co_await r;
 
@@ -236,7 +214,7 @@ TestBase::RunUserTask expect_tx_byte(Test& test,
     bool observed = false;
     co_await wait_tx_frame(test,
                            1u,
-                           params.frame_ticks() + (params.bit_ticks * 8u) + HANDSHAKE_TIMEOUT_CYCLES,
+                           params.frame_clks() + (params.bit_clks * 8u) + HANDSHAKE_TIMEOUT_CYCLES,
                            label,
                            observed);
 
@@ -249,7 +227,7 @@ TestBase::RunUserTask expect_tx_byte(Test& test,
         }
     }
 
-    co_await test.core_intf.wait_tx_idle(params.frame_ticks() + HANDSHAKE_TIMEOUT_CYCLES);
+    co_await test.core_intf.wait_tx_idle(params.frame_clks() + HANDSHAKE_TIMEOUT_CYCLES);
     co_return;
 }
 
@@ -264,7 +242,7 @@ TestBase::RunUserTask expect_queued_tx_after_enable(Test& test,
     bool observed = false;
     co_await wait_tx_frame(test,
                            1u,
-                           params.frame_ticks() + (params.bit_ticks * 8u) + HANDSHAKE_TIMEOUT_CYCLES,
+                           params.frame_clks() + (params.bit_clks * 8u) + HANDSHAKE_TIMEOUT_CYCLES,
                            label,
                            observed);
 
@@ -273,7 +251,7 @@ TestBase::RunUserTask expect_queued_tx_after_enable(Test& test,
         test.scb_core.observe_uart_tx_frame(history.back());
     }
 
-    co_await test.core_intf.wait_tx_idle(params.frame_ticks() + HANDSHAKE_TIMEOUT_CYCLES);
+    co_await test.core_intf.wait_tx_idle(params.frame_clks() + HANDSHAKE_TIMEOUT_CYCLES);
     co_return;
 }
 
@@ -308,7 +286,7 @@ TestBase::RunUserTask subcase_cfg_enable(Test& test) {
     if (accepted) {
         const UartCoreEventCounts before_tx = test.core_intf.event_counts();
         co_await check_uart_tx_idle_high(test,
-                                         params.frame_ticks() + (params.bit_ticks * 4u),
+                                         params.frame_clks() + (params.bit_clks * 4u),
                                          "cfg_enable=0 queued TX");
         const UartCoreEventCounts after_tx = test.core_intf.event_counts();
         check_true(test,
@@ -401,7 +379,7 @@ TestBase::RunUserTask subcase_cfg_tx_enable(Test& test) {
 
     const UartCoreEventCounts before = test.core_intf.event_counts();
     co_await check_uart_tx_idle_high(test,
-                                     params.frame_ticks() + (params.bit_ticks * 4u),
+                                     params.frame_clks() + (params.bit_clks * 4u),
                                      "cfg_tx_enable=0 queued TX");
     co_await test.core_intf.sample_status(status);
     check_true(test, !status.tx_busy, "cfg_tx_enable=0 allowed tx_busy");
@@ -429,7 +407,7 @@ TestBase::RunUserTask subcase_cfg_tx_enable(Test& test) {
     bool observed = false;
     co_await wait_tx_frame(test,
                            1u,
-                           params.frame_ticks() + (params.bit_ticks * 8u) + HANDSHAKE_TIMEOUT_CYCLES,
+                           params.frame_clks() + (params.bit_clks * 8u) + HANDSHAKE_TIMEOUT_CYCLES,
                            "cfg_tx_enable restore",
                            observed);
 
@@ -437,7 +415,7 @@ TestBase::RunUserTask subcase_cfg_tx_enable(Test& test) {
     if (observed && !history.empty()) {
         test.scb_core.observe_uart_tx_frame(history.back());
     }
-    co_await test.core_intf.wait_tx_idle(params.frame_ticks() + HANDSHAKE_TIMEOUT_CYCLES);
+    co_await test.core_intf.wait_tx_idle(params.frame_clks() + HANDSHAKE_TIMEOUT_CYCLES);
     co_await test.core_intf.sample_status(status);
     check_true(test, status.tx_empty && !status.tx_busy, "cfg_tx_enable restore did not drain TX");
     check_true(test,
@@ -478,8 +456,10 @@ TestBase::RunUserTask subcase_cfg_baud_inc(Test& test) {
                        false);
     co_await expect_tx_byte(test, 0xa5u, 0xa5u, slow, "cfg_baud_inc slow", &slow_frame);
 
-    const double fast_duration = fast_frame.end_time_ns - fast_frame.start_time_ns;
-    const double slow_duration = slow_frame.end_time_ns - slow_frame.start_time_ns;
+    const double fast_duration =
+        vip::common::ticks_to_ns(test, vip::common::delta_ticks(fast_frame.start_tick, fast_frame.end_tick));
+    const double slow_duration =
+        vip::common::ticks_to_ns(test, vip::common::delta_ticks(slow_frame.start_tick, slow_frame.end_tick));
     const double expected_slow = fast_duration * 2.0;
     const double tolerance = expected_slow * 0.02 > 200.0 ? expected_slow * 0.02 : 200.0;
     check_true(test,
@@ -649,10 +629,12 @@ TestBase::RunUserTask subcase_cfg_stop_bits(Test& test) {
                        false);
     co_await expect_tx_byte(test, 0x99u, 0x99u, stop2, "cfg_stop_bits 2-stop TX", &stop2_frame);
 
-    const double one_stop_duration = stop1_frame.end_time_ns - stop1_frame.start_time_ns;
-    const double two_stop_duration = stop2_frame.end_time_ns - stop2_frame.start_time_ns;
+    const double one_stop_duration =
+        vip::common::ticks_to_ns(test, vip::common::delta_ticks(stop1_frame.start_tick, stop1_frame.end_tick));
+    const double two_stop_duration =
+        vip::common::ticks_to_ns(test, vip::common::delta_ticks(stop2_frame.start_tick, stop2_frame.end_tick));
     check_true(test,
-               two_stop_duration > one_stop_duration + (CLK_PERIOD_NS * stop1.bit_ticks * 0.5),
+               two_stop_duration > one_stop_duration + (CLK_PERIOD_NS * stop1.bit_clks * 0.5),
                "cfg_stop_bits 2-stop frame was not longer than 1-stop frame");
 
     co_await wait_core_idle(test, "cfg_stop_bits pre-bad-RX idle");
@@ -705,7 +687,6 @@ TestBase::RunUserTask subcase_cfg_hw_flow_enable(Test& test) {
 } // namespace
 
 TestBase::RunUserTask tc_cfg(Test& test) {
-    vip::common::log_line("tc_cfg", "INFO", "start");
 
     co_await subcase_cfg_enable(test);
     co_await subcase_cfg_rx_enable(test);
@@ -720,7 +701,6 @@ TestBase::RunUserTask tc_cfg(Test& test) {
         test.scb.note_pass("tc_cfg configuration behavior completed");
     }
 
-    vip::common::log_line("tc_cfg", "INFO", "end");
     co_return;
 }
 

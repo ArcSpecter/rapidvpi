@@ -1,25 +1,3 @@
-// MIT License
-
-// Copyright (c) 2026 Rovshan Rustamov
-
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-
-// The above copyright notice and this permission notice shall be included in all
-// copies or substantial portions of the Software.
-
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-// SOFTWARE.
-
 #ifndef VIP_UART_AGENTS_UART_TX_TX_HPP
 #define VIP_UART_AGENTS_UART_TX_TX_HPP
 
@@ -85,10 +63,10 @@ public:
     [[nodiscard]] std::size_t pending_count(const std::string& port) const;
     [[nodiscard]] std::size_t port_count() const { return ports_.size(); }
 
-    void set_inter_frame_gap_ticks(const std::string& port, unsigned ticks);
+    void set_inter_frame_gap_clks(const std::string& port, unsigned clks);
     void set_respect_rts(const std::string& port, bool en);
     void set_rts_active_low(const std::string& port, bool active_low);
-    void set_rts_wait_timeout_ticks(const std::string& port, unsigned ticks);
+    void set_rts_wait_timeout_clks(const std::string& port, unsigned clks);
 
     void arm_next_framing_error(const std::string& port);
     void arm_next_parity_error(const std::string& port);
@@ -112,8 +90,8 @@ private:
         UartTxPortConfig cfg;
         std::deque<TxItem> pending;
         std::vector<UartFrame> history;
-        unsigned inter_frame_gap_ticks = 0u;
-        unsigned rts_wait_timeout_ticks = 0u;
+        unsigned inter_frame_gap_clks = 0u;
+        unsigned rts_wait_timeout_clks = 0u;
         bool respect_rts = false;
         bool auto_expect = false;
         bool next_bad_stop = false;
@@ -142,7 +120,7 @@ private:
     static double baud_to_bit_time_ns_(std::uint64_t baud_rate);
 
     RunUserTask drive_line_(PortState& port, bool logical_level);
-    RunUserTask wait_ticks_(unsigned ticks);
+    RunUserTask wait_clks_(unsigned clks);
     RunUserTask wait_item_bit_(const TxItem& item);
     RunUserTask read_bit_(const std::string& net, bool& value);
     RunUserTask reset_asserted_(bool& asserted);

@@ -1,25 +1,3 @@
-// MIT License
-
-// Copyright (c) 2026 Rovshan Rustamov
-
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-
-// The above copyright notice and this permission notice shall be included in all
-// copies or substantial portions of the Software.
-
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-// SOFTWARE.
-
 #include "vip_uart/agents/uart_tx/tx.hpp"
 
 #include "vip_common/common/logger.hpp"
@@ -39,19 +17,19 @@ UartTx::RunTask UartTx::agent(const unsigned idx) {
         co_await reset_asserted_(in_reset);
         if (in_reset) {
             co_await drive_line_(port, params_.idle_high);
-            co_await wait_ticks_(params_.idle_poll_ticks);
+            co_await wait_clks_(params_.idle_poll_clks);
             continue;
         }
 
         if (port.pending.empty()) {
-            co_await wait_ticks_(params_.idle_poll_ticks);
+            co_await wait_clks_(params_.idle_poll_clks);
             continue;
         }
 
         bool rts_ready = true;
         co_await wait_rts_active_(port, rts_ready);
         if (!rts_ready) {
-            co_await wait_ticks_(params_.idle_poll_ticks);
+            co_await wait_clks_(params_.idle_poll_clks);
             continue;
         }
 
@@ -60,8 +38,8 @@ UartTx::RunTask UartTx::agent(const unsigned idx) {
         co_await send_item_(port, item);
         ticket_done_[item.ticket] = true;
 
-        if (port.inter_frame_gap_ticks != 0u) {
-            co_await wait_ticks_(port.inter_frame_gap_ticks);
+        if (port.inter_frame_gap_clks != 0u) {
+            co_await wait_clks_(port.inter_frame_gap_clks);
         }
     }
 
@@ -69,29 +47,29 @@ UartTx::RunTask UartTx::agent(const unsigned idx) {
 }
 
 UartTx::RunUserTask UartTx::drive_line_(PortState& port, const bool logical_level) {
-    auto w = tb_.getCoWrite(0);
+    auto w = tb_.getCoWrite();
     w.write(port.cfg.tx_net, logical_level ? 1 : 0);
     co_await w;
     co_return;
 }
 
-UartTx::RunUserTask UartTx::wait_ticks_(const unsigned ticks) {
-    const unsigned n = ticks == 0u ? 1u : ticks;
+UartTx::RunUserTask UartTx::wait_clks_(const unsigned clks) {
+    const unsigned n = clks == 0u ? 1u : clks;
     co_await utils_.clock(static_cast<int>(n), 1);
     co_return;
 }
 
 UartTx::RunUserTask UartTx::wait_item_bit_(const TxItem& item) {
     if (item.use_time_delay) {
-        co_await utils_.delay_ns(item.bit_time_ns);
+        co_await utils_.delay<test::ns>(item.bit_time_ns);
     } else {
-        co_await wait_ticks_(params_.bit_ticks);
+        co_await wait_clks_(params_.bit_clks);
     }
     co_return;
 }
 
 UartTx::RunUserTask UartTx::read_bit_(const std::string& net, bool& value) {
-    auto r = tb_.getCoRead(0);
+    auto r = tb_.getCoRead();
     r.read(net);
     co_await r;
     value = (r.getNum(net) & 1u) != 0u;
@@ -116,7 +94,7 @@ UartTx::RunUserTask UartTx::wait_rts_active_(PortState& port, bool& active) {
         co_return;
     }
 
-    unsigned waited = 0u;
+    unsigned waited_clks = 0u;
     for (;;) {
         bool physical = false;
         co_await read_bit_(port.cfg.rts_net, physical);
@@ -125,20 +103,20 @@ UartTx::RunUserTask UartTx::wait_rts_active_(PortState& port, bool& active) {
             co_return;
         }
 
-        if (scb_rules_ != nullptr && waited != 0u) {
-            scb_rules_->observe_rts_blocked(port.cfg.name, waited);
+        if (scb_rules_ != nullptr && waited_clks != 0u) {
+            scb_rules_->observe_rts_blocked(port.cfg.name, waited_clks);
         }
 
-        if (port.rts_wait_timeout_ticks != 0u && waited >= port.rts_wait_timeout_ticks) {
+        if (port.rts_wait_timeout_clks != 0u && waited_clks >= port.rts_wait_timeout_clks) {
             if (scb_rules_ != nullptr) {
-                scb_rules_->observe_rts_timeout(port.cfg.name, waited);
+                scb_rules_->observe_rts_timeout(port.cfg.name, waited_clks);
             }
             active = false;
             co_return;
         }
 
-        waited += params_.idle_poll_ticks;
-        co_await wait_ticks_(params_.idle_poll_ticks);
+        waited_clks += params_.idle_poll_clks;
+        co_await wait_clks_(params_.idle_poll_clks);
     }
 }
 
@@ -151,11 +129,11 @@ UartTx::RunUserTask UartTx::send_item_(PortState& port, TxItem item) {
     if (item.use_time_delay && item.align_to_clock_phase) {
         co_await utils_.clock_to_write(1, 1);
         if (item.phase_offset_ps != 0u) {
-            co_await utils_.delay_ns(static_cast<double>(item.phase_offset_ps) / 1000.0);
+            co_await utils_.delay<test::ps>(item.phase_offset_ps);
         }
     }
 
-    sent.start_time_ns = static_cast<double>(vip::common::sim_time_ns());
+    sent.start_tick = vip::common::sim_time_ticks();
     co_await drive_line_(port, start_level);
     co_await wait_item_bit_(item);
 
@@ -182,7 +160,7 @@ UartTx::RunUserTask UartTx::send_item_(PortState& port, TxItem item) {
     }
 
     co_await drive_line_(port, params_.idle_high);
-    sent.end_time_ns = static_cast<double>(vip::common::sim_time_ns());
+    sent.end_tick = vip::common::sim_time_ticks();
     port.history.push_back(sent);
 
     if (verbose_) {

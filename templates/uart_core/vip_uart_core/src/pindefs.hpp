@@ -1,25 +1,3 @@
-// MIT License
-
-// Copyright (c) 2026 Rovshan Rustamov
-
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-
-// The above copyright notice and this permission notice shall be included in all
-// copies or substantial portions of the Software.
-
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-// SOFTWARE.
-
 #ifndef VIP_UART_CORE_PINDEFS_HPP
 #define VIP_UART_CORE_PINDEFS_HPP
 
@@ -50,11 +28,11 @@ static constexpr std::uint64_t BASIC_BAUD_INC_NUM =
     static_cast<std::uint64_t>(BASIC_BAUD_RATE) * OVERSAMPLE * BAUD_INC_SCALE;
 static constexpr std::uint32_t BASIC_BAUD_INC =
     static_cast<std::uint32_t>((BASIC_BAUD_INC_NUM + (CLK_HZ / 2u)) / CLK_HZ);
-static constexpr unsigned BASIC_UART_BIT_TICKS =
+static constexpr unsigned BASIC_UART_BIT_CLKS =
     static_cast<unsigned>((CLK_HZ + (BASIC_BAUD_RATE / 2u)) / BASIC_BAUD_RATE);
-static constexpr unsigned BASIC_UART_SAMPLE_TICK = BASIC_UART_BIT_TICKS / 2u;
+static constexpr unsigned BASIC_UART_SAMPLE_CLK_INDEX = BASIC_UART_BIT_CLKS / 2u;
 static constexpr unsigned HANDSHAKE_TIMEOUT_CYCLES = 1024u;
-static constexpr unsigned TX_IDLE_TIMEOUT_CYCLES = BASIC_UART_BIT_TICKS * 16u;
+static constexpr unsigned TX_IDLE_TIMEOUT_CYCLES = BASIC_UART_BIT_CLKS * 16u;
 
 static constexpr unsigned UART_PARITY_NONE = 0u;
 static constexpr unsigned UART_PARITY_EVEN = 1u;
@@ -131,8 +109,8 @@ inline std::string uart_tx_port_name = "uart_tx";
     p.data_bits = 8u;
     p.stop_bits = 1u;
     p.parity = vip::uart::UartParity::NONE;
-    p.bit_ticks = BASIC_UART_BIT_TICKS;
-    p.sample_tick = BASIC_UART_SAMPLE_TICK;
+    p.bit_clks = BASIC_UART_BIT_CLKS;
+    p.sample_clk_index = BASIC_UART_SAMPLE_CLK_INDEX;
     p.idle_high = true;
     p.lsb_first = true;
     p.cts_active_low = true;

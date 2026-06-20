@@ -1,25 +1,3 @@
-// MIT License
-
-// Copyright (c) 2026 Rovshan Rustamov
-
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-
-// The above copyright notice and this permission notice shall be included in all
-// copies or substantial portions of the Software.
-
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-// SOFTWARE.
-
 #include "agents/uart_core_intf/intf.hpp"
 
 #include <utility>
@@ -48,7 +26,7 @@ UartCoreIntf::RunTask UartCoreIntf::monitor_events() {
     for (;;) {
         co_await utils_.clock(1, 1);
 
-        auto r = tb_.getCoRead(0);
+        auto r = tb_.getCoRead();
         r.read(reset_net_);
         r.read(event_rx_overrun);
         r.read(event_rx_frame_error);
@@ -75,7 +53,7 @@ UartCoreIntf::RunTask UartCoreIntf::monitor_events() {
 }
 
 UartCoreIntf::RunUserTask UartCoreIntf::drive_idle() {
-    auto w = tb_.getCoWrite(0);
+    auto w = tb_.getCoWrite();
     w.write(cfg_enable, 0);
     w.write(cfg_rx_enable, 0);
     w.write(cfg_tx_enable, 0);
@@ -138,7 +116,7 @@ UartCoreIntf::RunUserTask UartCoreIntf::try_push_tx_byte(const std::uint8_t data
     co_await write_tx_valid_(true, data);
 
     for (unsigned cycle = 0u; cycle < timeout_cycles; ++cycle) {
-        auto r = tb_.getCoRead(0);
+        auto r = tb_.getCoRead();
         r.read(tx_byte_ready);
         co_await r;
 
@@ -171,13 +149,13 @@ UartCoreIntf::RunUserTask UartCoreIntf::pop_rx_byte(UartCoreRxByte& rec,
 
     co_await utils_.clock_to_write(1, 0);
     {
-        auto w = tb_.getCoWrite(0);
+        auto w = tb_.getCoWrite();
         w.write(rx_byte_ready, 0);
         co_await w;
     }
 
     for (unsigned cycle = 0u; cycle < timeout_cycles; ++cycle) {
-        auto r = tb_.getCoRead(0);
+        auto r = tb_.getCoRead();
         r.read(rx_byte_valid);
         r.read(rx_byte_data);
         r.read(rx_byte_frame_error);
@@ -191,7 +169,7 @@ UartCoreIntf::RunUserTask UartCoreIntf::pop_rx_byte(UartCoreRxByte& rec,
             rec.frame_error = (r.getNum(rx_byte_frame_error) & 1u) != 0u;
             rec.parity_error = (r.getNum(rx_byte_parity_error) & 1u) != 0u;
             rec.break_detect = (r.getNum(rx_byte_break_detect) & 1u) != 0u;
-            rec.time_ns = static_cast<double>(vip::common::sim_time_ns());
+            rec.time_tick = r.getTime<test::ticks>();
             break;
         }
 
@@ -201,7 +179,7 @@ UartCoreIntf::RunUserTask UartCoreIntf::pop_rx_byte(UartCoreRxByte& rec,
     if (rec.valid) {
         co_await utils_.clock_to_write(1, 0);
         {
-            auto w = tb_.getCoWrite(0);
+            auto w = tb_.getCoWrite();
             w.write(rx_byte_ready, 1);
             co_await w;
         }
@@ -210,7 +188,7 @@ UartCoreIntf::RunUserTask UartCoreIntf::pop_rx_byte(UartCoreRxByte& rec,
 
         co_await utils_.clock_to_write(1, 0);
         {
-            auto w = tb_.getCoWrite(0);
+            auto w = tb_.getCoWrite();
             w.write(rx_byte_ready, 0);
             co_await w;
         }
@@ -229,14 +207,14 @@ UartCoreIntf::RunUserTask UartCoreIntf::pop_rx_byte(UartCoreRxByte& rec,
 
 UartCoreIntf::RunUserTask UartCoreIntf::set_rx_ready(const bool ready) {
     co_await utils_.clock_to_write(1, 0);
-    auto w = tb_.getCoWrite(0);
+    auto w = tb_.getCoWrite();
     w.write(rx_byte_ready, ready ? 1 : 0);
     co_await w;
     co_return;
 }
 
 UartCoreIntf::RunUserTask UartCoreIntf::sample_status(UartCoreStatus& status) {
-    auto r = tb_.getCoRead(0);
+    auto r = tb_.getCoRead();
     r.read(tx_byte_ready);
     r.read(rx_byte_valid);
     r.read(rx_fifo_level);
@@ -296,7 +274,7 @@ UartCoreIntf::RunUserTask UartCoreIntf::wait_tx_idle(const unsigned timeout_cycl
 }
 
 UartCoreIntf::RunUserTask UartCoreIntf::write_config_(const UartCoreConfig& cfg) {
-    auto w = tb_.getCoWrite(0);
+    auto w = tb_.getCoWrite();
     w.write(cfg_enable, cfg.enable ? 1 : 0);
     w.write(cfg_rx_enable, cfg.rx_enable ? 1 : 0);
     w.write(cfg_tx_enable, cfg.tx_enable ? 1 : 0);
@@ -311,7 +289,7 @@ UartCoreIntf::RunUserTask UartCoreIntf::write_config_(const UartCoreConfig& cfg)
 
 UartCoreIntf::RunUserTask UartCoreIntf::write_tx_valid_(const bool valid,
                                                         const std::uint8_t data) {
-    auto w = tb_.getCoWrite(0);
+    auto w = tb_.getCoWrite();
     w.write(tx_byte_data, data);
     w.write(tx_byte_valid, valid ? 1 : 0);
     co_await w;
@@ -321,14 +299,14 @@ UartCoreIntf::RunUserTask UartCoreIntf::write_tx_valid_(const bool valid,
 UartCoreIntf::RunUserTask UartCoreIntf::pulse_net_(const std::string& net) {
     co_await utils_.clock_to_write(1, 0);
     {
-        auto w = tb_.getCoWrite(0);
+        auto w = tb_.getCoWrite();
         w.write(net, 1);
         co_await w;
     }
 
     co_await utils_.clock_to_write(1, 0);
     {
-        auto w = tb_.getCoWrite(0);
+        auto w = tb_.getCoWrite();
         w.write(net, 0);
         co_await w;
     }

@@ -64,7 +64,7 @@ struct Test : public vip::common::TestBase {
     vip::common::Clock clk;
 
     Test()
-      : scb()
+      : scb(*this)
       , runner(*this)
       , por(*this, /*rst_net=*/"rst_n", /*active_low=*/true)
       , clk(*this, /*net_name=*/"clk", /*task_name=*/"clk_run")
@@ -149,10 +149,10 @@ runner.set_after_all_hook([this]() {
 Header: `vip_common/common/logger.hpp`
 
 - `vip::common::SimLogger` is a minimal **VPI-backed** stream-like logger.
-- `vip::common::log_line(src, level, msg)` prints in a stable format:
+- `vip::common::log_line(src, level, msg)` prints in a stable format with a raw simulator tick:
 
-```
-# [source][level][time_ns] message...
+```text
+# [source][level][tick=12345] message...
 ```
 
 Example:
@@ -218,15 +218,15 @@ Header: `vip_common/agents/clock/clock.hpp`
 `vip::common::Clock` is a free-running toggler for a single net:
 - registers a RapidVPI task (`task_name`) that toggles `net_name`
 - cases control it via coroutines:
-  - `start(period_ns)`
+  - `start<unit>(period)`
   - `stop()`
-  - `set_period(period_ns)`
+  - `set_period<unit>(period)`
 
 Example:
 
 ```cpp
-co_await clk.start(10.0);     // 100 MHz
-co_await clk.set_period(8.0); // 125 MHz
+co_await clk.start<test::ns>(10.0);     // 100 MHz
+co_await clk.set_period<test::ns>(8.0); // 125 MHz
 co_await clk.stop();
 ```
 
@@ -241,7 +241,7 @@ Header: `vip_common/agents/por/por.hpp`
 Example:
 
 ```cpp
-co_await por.pulse_reset(/*hold_ns=*/50.0, /*settle_ns=*/50.0);
+co_await por.pulse_reset<test::ns>(50.0, 50.0);
 ```
 
 Supports active-low and active-high via constructor:
@@ -258,7 +258,7 @@ Header: `vip_common/common/common.hpp`
 `vip::common::CommonUtils` is a small set of coroutine helpers:
 - `waitFor(net, val)` — waits until net equals value (returns immediately if already equal)
 - `clock(n, edge)` — waits `n` clock edges on a configured default clock net
-- `delay_ns(t)` — write-phase delay (yields for `t` ns)
+- `delay<unit>(t)` — write-phase delay with an explicit RapidVPI time unit
 
 Phase-safe helpers:
 - `write_barrier()`

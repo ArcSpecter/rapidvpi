@@ -1,25 +1,3 @@
-// MIT License
-
-// Copyright (c) 2026 Rovshan Rustamov
-
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-
-// The above copyright notice and this permission notice shall be included in all
-// copies or substantial portions of the Software.
-
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-// SOFTWARE.
-
 #ifndef VIP_UART_COMMON_UART_PARAMS_HPP
 #define VIP_UART_COMMON_UART_PARAMS_HPP
 
@@ -38,11 +16,11 @@ struct UartParams {
     unsigned stop_bits = 1;
     UartParity parity = UartParity::NONE;
 
-    // Number of testbench clock rising edges per UART bit.
-    unsigned bit_ticks = 16;
+    // Number of parent testbench clock rising edges per UART bit.
+    unsigned bit_clks = 16;
 
     // Start-bit center sample offset after the start edge is detected.
-    unsigned sample_tick = 8;
+    unsigned sample_clk_index = 8;
 
     bool idle_high = true;
     bool lsb_first = true;
@@ -52,17 +30,17 @@ struct UartParams {
     bool cts_active_low = true;
     bool rts_active_low = true;
 
-    // Agent idle polling while no frame is active.
-    unsigned idle_poll_ticks = 1;
+    // Agent idle polling clock edges while no frame is active.
+    unsigned idle_poll_clks = 1;
 
     [[nodiscard]] bool valid() const {
         return data_bits >= 5u
             && data_bits <= 8u
             && stop_bits >= 1u
             && stop_bits <= 2u
-            && bit_ticks > 0u
-            && sample_tick > 0u
-            && sample_tick <= bit_ticks;
+            && bit_clks > 0u
+            && sample_clk_index > 0u
+            && sample_clk_index <= bit_clks;
     }
 
     [[nodiscard]] bool parity_enable() const {
@@ -73,8 +51,8 @@ struct UartParams {
         return 1u + data_bits + (parity_enable() ? 1u : 0u) + stop_bits;
     }
 
-    [[nodiscard]] unsigned frame_ticks() const {
-        return bits_per_frame() * bit_ticks;
+    [[nodiscard]] unsigned frame_clks() const {
+        return bits_per_frame() * bit_clks;
     }
 
     [[nodiscard]] std::uint8_t data_mask() const {

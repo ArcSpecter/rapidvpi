@@ -1,25 +1,3 @@
-// MIT License
-
-// Copyright (c) 2026 Rovshan Rustamov
-
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-
-// The above copyright notice and this permission notice shall be included in all
-// copies or substantial portions of the Software.
-
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-// SOFTWARE.
-
 #include "tc_utils.hpp"
 
 #include "../pindefs.hpp"
@@ -42,8 +20,8 @@ vip::uart::UartParams tc_uart_params_for(const std::uint32_t baud_rate,
     params.data_bits = data_bits;
     params.stop_bits = stop_bits;
     params.parity = parity;
-    params.bit_ticks = static_cast<unsigned>((CLK_HZ + (baud_rate / 2u)) / baud_rate);
-    params.sample_tick = params.bit_ticks / 2u;
+    params.bit_clks = static_cast<unsigned>((CLK_HZ + (baud_rate / 2u)) / baud_rate);
+    params.sample_clk_index = params.bit_clks / 2u;
     return params;
 }
 
@@ -70,12 +48,12 @@ UartCoreConfig tc_make_uart_config(const std::uint32_t baud_rate,
 TestBase::RunUserTask tc_local_reset(Test& test) {
     vip::common::log_line("tc_utils", "INFO", "local reset start");
 
-    co_await test.clock_agent.start(CLK_PERIOD_NS);
+    co_await test.clock_agent.start<test::ns>(CLK_PERIOD_NS);
     co_await test.core_intf.drive_idle();
     co_await test.uart_peer_rx.drive_cts_now(uart_tx_port_name, true);
 
-    co_await test.por.assert_reset(CLK_PERIOD_NS * 4.0);
-    co_await test.por.deassert_reset(0.0);
+    co_await test.por.assert_reset<test::ns>(CLK_PERIOD_NS * 4.0);
+    co_await test.por.deassert_reset();
     co_await test.utils.clock(4, 1);
 
     co_await tc_apply_basic_config(test);

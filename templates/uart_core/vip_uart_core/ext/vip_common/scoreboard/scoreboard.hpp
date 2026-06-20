@@ -1,25 +1,3 @@
-// MIT License
-
-// Copyright (c) 2026 Rovshan Rustamov
-
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-
-// The above copyright notice and this permission notice shall be included in all
-// copies or substantial portions of the Software.
-
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-// SOFTWARE.
-
 // vip_common/scoreboard/scoreboard.hpp
 #ifndef VIP_COMMON_SCOREBOARD_HPP
 #define VIP_COMMON_SCOREBOARD_HPP
@@ -44,7 +22,7 @@ public:
 
     struct Event {
         Level level = Level::INFO;
-        double time_ns = -1.0; // optional; -1 if unknown
+        sim_tick_t time_tick = INVALID_TICK; // optional; INVALID_TICK if unknown
         std::string msg;
     };
 
@@ -57,7 +35,7 @@ public:
         PRINT_FAIL = 1u << 3,
     };
 
-    Scoreboard();
+    explicit Scoreboard(TestBase& tb);
 
     // Full reset of totals and current-case state.
     void reset_all();
@@ -66,14 +44,14 @@ public:
     void reset_case();
 
     // Case lifecycle.
-    void start_case(const std::string& case_name, double time_ns = -1.0);
-    void end_case(double time_ns = -1.0);
+    void start_case(const std::string& case_name, sim_tick_t time_tick = INVALID_TICK);
+    void end_case(sim_tick_t time_tick = INVALID_TICK);
 
     // Record events.
-    void note_info(const std::string& msg, double time_ns = -1.0);
-    void note_pass(const std::string& msg, double time_ns = -1.0);
-    void note_warn(const std::string& msg, double time_ns = -1.0);
-    void note_fail(const std::string& msg, double time_ns = -1.0);
+    void note_info(const std::string& msg, sim_tick_t time_tick = INVALID_TICK);
+    void note_pass(const std::string& msg, sim_tick_t time_tick = INVALID_TICK);
+    void note_warn(const std::string& msg, sim_tick_t time_tick = INVALID_TICK);
+    void note_fail(const std::string& msg, sim_tick_t time_tick = INVALID_TICK);
 
     // Query per-case results.
     const std::string& current_case() const { return case_name_; }
@@ -120,13 +98,15 @@ public:
     void set_print_silent_except_fail(); // FAIL only
 
 private:
+    TestBase& tb_;
+
     // Current case context
     std::string case_name_;
     std::size_t case_index_ = 0;
 
     bool case_active_ = false;
-    double case_start_time_ns_ = -1.0;
-    double case_end_time_ns_ = -1.0;
+    sim_tick_t case_start_tick_ = INVALID_TICK;
+    sim_tick_t case_end_tick_ = INVALID_TICK;
 
     // Per-case counters
     std::size_t case_info_count_ = 0;
@@ -151,7 +131,7 @@ private:
     // Print policy (default WARN+FAIL)
     std::uint8_t print_mask_ = static_cast<std::uint8_t>(PRINT_WARN | PRINT_FAIL);
 
-    void push_event(Level lvl, const std::string& msg, double time_ns);
+    void push_event(Level lvl, const std::string& msg, sim_tick_t time_tick);
     static const char* level_str(Level lvl);
 
     bool should_print(Level lvl) const;

@@ -1,25 +1,3 @@
-// MIT License
-
-// Copyright (c) 2026 Rovshan Rustamov
-
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-
-// The above copyright notice and this permission notice shall be included in all
-// copies or substantial portions of the Software.
-
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-// SOFTWARE.
-
 #include "scoreboard/scb_uart_core.hpp"
 
 #include <iomanip>
@@ -73,7 +51,7 @@ void ScbUartCore::observe_rx_byte(const UartCoreRxByte& rec) {
     if (expected_rx_.empty()) {
         scb_.note_fail("uart_core unexpected RX byte-side record "
                        + rx_record_string_(rec),
-                       rec.time_ns);
+                       rec.time_tick);
         return;
     }
 
@@ -89,13 +67,13 @@ void ScbUartCore::observe_rx_byte(const UartCoreRxByte& rec) {
         scb_.note_fail("uart_core RX byte-side mismatch expected "
                        + rx_record_string_(exp)
                        + " observed " + rx_record_string_(rec),
-                       rec.time_ns);
+                       rec.time_tick);
         return;
     }
 
     if (verbose_) {
         scb_.note_pass("uart_core observed RX byte-side " + rx_record_string_(rec),
-                       rec.time_ns);
+                       rec.time_tick);
     }
 }
 
@@ -117,7 +95,7 @@ void ScbUartCore::observe_uart_tx_frame(const vip::uart::UartFrame& frame) {
     if (expected_tx_.empty()) {
         scb_.note_fail("uart_core unexpected UART TX frame data="
                        + std::to_string(static_cast<unsigned>(frame.data)),
-                       frame.end_time_ns);
+                       frame.end_tick);
         return;
     }
 
@@ -135,14 +113,14 @@ void ScbUartCore::observe_uart_tx_frame(const vip::uart::UartFrame& frame) {
             << " framing_error=" << (frame.framing_error ? 1 : 0)
             << " parity_error=" << (frame.parity_error ? 1 : 0)
             << " break=" << (frame.break_detect ? 1 : 0);
-        scb_.note_fail(oss.str(), frame.end_time_ns);
+        scb_.note_fail(oss.str(), frame.end_tick);
         return;
     }
 
     if (verbose_) {
         scb_.note_pass("uart_core observed TX serial byte "
                        + std::to_string(static_cast<unsigned>(frame.data)),
-                       frame.end_time_ns);
+                       frame.end_tick);
     }
 }
 
