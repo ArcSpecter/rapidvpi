@@ -111,7 +111,10 @@ cmake --build /path/to/vip_project/cmake-build-release --target <vip_target_name
 ### RapidVPI Phase Discipline
 
 - Treat `getCoRead()`, `getCoChange()`, and `test.utils.clock()` as RO/read-observation awaits.
-- After any RO await, do not assume a following `getCoWrite(0)` affects the already-sampled RTL clock edge.
+- Use the no-argument `getCoWrite()` and `getCoRead()` forms for zero-delay phase synchronization.
+- Use explicit units for real delays, for example `getCoWrite<test::ns>(10.0)` or `getCoRead<test::ticks>(10000)`.
+- Do not use obsolete implicit-delay forms such as `getCoWrite(0)`, `getCoRead(0)`, `getCoWrite(10.0)`, `getCoRead(10.0)`, or `getTime()`.
+- After any RO await, do not assume a following `getCoWrite()` affects the already-sampled RTL clock edge.
 - Same timestamp does not mean same simulation region. A waveform may show final settled values while RTL sampled earlier values at the active edge.
 - Use `test.utils.clock_to_write()` and `test.utils.write_barrier()` when crossing from observation to driving.
 - Use `clock_to_write(1, 0)` to drive in the low phase for next rising-edge sampling.
@@ -133,7 +136,7 @@ Preferred valid-ready drive pattern:
 co_await test.utils.clock_to_write(1, 0);
 
 {
-    auto w = test.getCoWrite(0);
+    auto w = test.getCoWrite();
     axi::write_bitvec(w, data_net, data_word, DATA_W);
     w.write(valid_net, 0);
     co_await w;
@@ -142,7 +145,7 @@ co_await test.utils.clock_to_write(1, 0);
 co_await test.utils.write_barrier();
 
 {
-    auto w = test.getCoWrite(0);
+    auto w = test.getCoWrite();
     axi::write_bitvec(w, data_net, data_word, DATA_W);
     w.write(valid_net, 1);
     co_await w;

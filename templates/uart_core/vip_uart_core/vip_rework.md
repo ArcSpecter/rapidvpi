@@ -1603,5 +1603,3 @@ Use this order for Codex or any automated agent:
 9. Update testcase source files and remove duplicate manual top-level start/end logs.
 10. Run grep checklist until stale API patterns are gone.
 11. Build.
-
-After this rework, `vip_uart_core` should become the reference project shape for updating other existing `vip_xxx` projects.
