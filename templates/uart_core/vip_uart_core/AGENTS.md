@@ -1,51 +1,16 @@
-MIT License
-
-Copyright (c) 2026 Rovshan Rustamov
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-
 # AGENTS.md
 
 ## Purpose
 
 This repository is a RapidVPI-based VIP/cosim project.
 
-When creating a new reusable VIP package or agent family such as `vip_uart`, `vip_spi`, `vip_i2c`, or any other `vip_xxx`, follow the standalone reusable VIP creation guide first:
+When creating a new reusable VIP package or agent family such as `vip_uart`, `vip_spi`, `vip_i2c`, or any other `vip_xxx` or making structural changes, creating new testcases, adding agents, changing scoreboard behavior, or modifying RapidVPI coroutine flow follow the standalone reusable VIP creation guide first:
 
 ```text
 ./docs/vip_design_guide.md
 ```
 
 That guide defines the default `vip_xxx` repository structure, agent/scoreboard split, configuration-hook style, additive-extension policy, and CMake/documentation expectations. Do not require copying another existing `vip_xxx` repository as reference when creating a new VIP; existing VIPs may be inspected only as optional examples when available.
-
-
-Before making structural changes, creating new testcases, adding agents, changing scoreboard behavior, or modifying RapidVPI coroutine flow, follow the shared RapidVPI VIP design guide:
-
-```text
-ext/vip_common/docs/vip_cosim_design_guide_compact.md
-```
-
-If this repository is `vip_common` itself, use:
-
-```text
-docs/vip_cosim_design_guide_compact.md
-```
 
 Treat that guide as canonical for project layout, testcase organization, reusable VIP policy, RapidVPI RO/WO phase discipline, valid-ready drive discipline, wide-vector handling, scoreboards, agents, logging, and README rules.
 
@@ -207,7 +172,6 @@ src/cases/tc_utils.hpp
 src/cases/tc_utils.cpp
 src/cases/tc_*.hpp
 src/cases/tc_*.cpp
-ext/vip_common/docs/vip_cosim_design_guide_compact.md
 ```
 
 Also inspect relevant protocol VIP packages under `ext/`, for example:

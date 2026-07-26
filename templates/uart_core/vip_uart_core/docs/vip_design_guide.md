@@ -26,18 +26,6 @@ This document defines the default architecture for creating any reusable `vip_xx
 
 The goal is that a new VIP can be created from this guide without copying another `vip_xxx` repository as a reference and without forcing an AI agent to inspect `/usr/local/include/rapidvpi` or RapidVPI source files. Existing VIPs such as `vip_axi`, `vip_axil`, `vip_axis`, `vip_mdio`, `vip_eth`, or `vip_uart` may still be inspected when available, but they are examples only. This guide is the policy source.
 
-This version reflects the current RapidVPI time API after the explicit unit refactor:
-
-```cpp
-rd.getTime<ticks>();
-rd.getTime<ns>();
-test.getCoWrite();
-test.getCoWrite<ns>(10.0);
-test.getCoWrite<ticks>(10000);
-```
-
-Do not use old implicit-nanosecond forms such as `getCoWrite(0)`, `getCoRead(0)`, `getCoWrite(10.0)`, or `rd.getTime()`.
-
 ---
 
 ## Table of contents
