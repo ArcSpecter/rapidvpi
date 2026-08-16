@@ -21,6 +21,7 @@ Blazingly fast, modern C++ API using coroutines for efficient RTL verification a
   - [release("port")](#releaseport)
   - [getCoChange("port", value[optional])](#getcochangeport-valueoptional)
   - [getCoRead("port")](#getcoreadport)
+  - [finishSimulation()](#finishsimulation)
 - [User coroutines](#user-coroutines)
 - [Usage of RapidVPI](#usage-of-rapidvpi)
 
@@ -881,6 +882,30 @@ After the awaitable object is ready, we add read operations to it and suspend co
 1. `getNum()` - returns numeric (64 bits or less) value of the port monitored for a change
 2. `getHexStr()` - returns Hex string value of the port monitored for change
 3. `getBinStr()` - returns Bin string value of the port monitored for change
+
+### finishSimulation()
+
+`core::finishSimulation()` requests the simulator equivalent of SystemVerilog
+`$finish` without requiring user or VIP code to include or call the raw VPI API.
+RapidVPI does not call this function automatically from its scheduler, test
+management, runner, startup, or other infrastructure. The application decides
+when the complete testcase plan and its cleanup are finished.
+
+The recommended place to make the request is an end-of-complete-test-plan hook:
+
+```c++
+runner.set_after_all_hook([this]() {
+    axis_mst.trace_close();
+    core::finishSimulation();
+});
+```
+
+Simulator-specific finish behavior remains controlled by simulator launch and
+configuration. Under Questa, for example, the request follows Questa's
+configured finish policy: with `-onfinish stop`, an interactive GUI simulation
+stops while the GUI remains available for waveform and debug inspection.
+Automated non-GUI flows can subsequently exit according to their normal batch
+or console flow. RapidVPI does not encode GUI-versus-batch policy.
 
 ### User coroutines
 A lot of times there is a need to abstract the coroutines doing some repetetive task. Later on those coroutines can be called inside the main test coroutines. The abstracted user coroutines will have a type `RunUserTask` unlike the default `RunTask` RapidVPI coroutines. See with the following example. Say we want to write down a coroutine which would be basically waiting on the next clock edge N times and the clock edge can be either rising or falling. We can declare the user coroutine as following inside `test_impl.hpp`:

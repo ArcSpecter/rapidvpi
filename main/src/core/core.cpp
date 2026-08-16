@@ -33,6 +33,11 @@ namespace core {
     createTestInstance = std::move(factory);
   }
 
+  void finishSimulation()
+  {
+    vpi_control(vpiFinish, 0);
+  }
+
   PLI_INT32 sim_init(p_cb_data data) {
     if (!createTestInstance) {
       printf("[ERROR] Test instance factory is not registered.\n");

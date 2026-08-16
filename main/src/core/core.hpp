@@ -33,6 +33,7 @@
 namespace core {
     void register_cb();
     PLI_INT32 sim_init(p_cb_data data);
+    void finishSimulation();
 
     // User-defined factory registration hook (to be implemented by user projects)
     extern "C" void userRegisterFactory();
