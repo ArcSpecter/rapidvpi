@@ -1,27 +1,3 @@
-/*
- * MIT License
- *
- * Copyright (c) 2026 Rovshan Rustamov
- *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in all
- * copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- * SOFTWARE.
- */
-
 #ifndef VIP_UART_AGENTS_UART_TX_TX_HPP
 #define VIP_UART_AGENTS_UART_TX_TX_HPP
 
@@ -39,6 +15,11 @@
 #include "vip_uart/scoreboard/uart_scb/scb_uart_stream.hpp"
 
 namespace vip::uart {
+
+struct UartRtsTransition {
+    bool active = false;
+    test::sim_tick_t tick = vip::common::INVALID_TICK;
+};
 
 class UartTx {
 public:
@@ -91,6 +72,13 @@ public:
     void set_respect_rts(const std::string& port, bool en);
     void set_rts_active_low(const std::string& port, bool active_low);
     void set_rts_wait_timeout_clks(const std::string& port, unsigned clks);
+    RunUserTask sample_rts_active(const std::string& port, bool& active);
+    RunUserTask wait_for_rts_state(const std::string& port,
+                                   bool active,
+                                   unsigned timeout_cycles,
+                                   bool& reached);
+    [[nodiscard]] std::vector<UartRtsTransition> rts_history(
+        const std::string& port) const;
 
     void arm_next_framing_error(const std::string& port);
     void arm_next_parity_error(const std::string& port);
@@ -120,6 +108,9 @@ private:
         bool auto_expect = false;
         bool next_bad_stop = false;
         bool next_bad_parity = false;
+        bool last_rts_valid = false;
+        bool last_rts_active = false;
+        std::vector<UartRtsTransition> rts_transitions;
     };
 
     TestBase& tb_;
@@ -148,6 +139,7 @@ private:
     RunUserTask wait_item_bit_(const TxItem& item);
     RunUserTask read_bit_(const std::string& net, bool& value);
     RunUserTask reset_asserted_(bool& asserted);
+    void record_rts_(PortState& port, bool active);
     RunUserTask wait_rts_active_(PortState& port, bool& active);
     RunUserTask send_item_(PortState& port, TxItem item);
 };

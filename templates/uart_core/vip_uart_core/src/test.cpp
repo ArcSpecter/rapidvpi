@@ -1,27 +1,3 @@
-/*
- * MIT License
- *
- * Copyright (c) 2026 Rovshan Rustamov
- *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in all
- * copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- * SOFTWARE.
- */
-
 #include "test.hpp"
 
 #include "cases/tc_basic.hpp"
@@ -41,7 +17,14 @@ Test::Test()
     , scb(*this)
     , utils(*this, clk)
     , por(*this, rst_n)
-    , clock_agent(*this, clk, "clk_run")
+    , clock_agent(*this,
+                  clk,
+                  "clk_run",
+                  vip::common::Clock::NativeClockCfg{
+                      .enable_net = sim_clk_enable,
+                      .period_ticks_net = sim_clk_period_ticks,
+                      .stopped_net = sim_clk_stopped,
+                  })
     , uart_params(make_uart_params())
     , scb_uart_stream(scb, uart_params)
     , scb_uart_rules(scb)
@@ -88,6 +71,10 @@ Test::Test()
         scb.print_total_summary();
     });
 
+    runner.set_after_all_hook([]() {
+        core::finishSimulation();
+    });
+
     register_tc_basic(*this, {"smoke", "regression"}, true, "tc_basic");
     register_tc_cfg(*this, {"config", "regression"}, true, "tc_cfg");
     register_tc_fifo(*this, {"fifo", "regression"}, true, "tc_fifo");
@@ -99,13 +86,13 @@ Test::Test()
 
     runner.set_plan({
         "tc_basic",
-        // "tc_cfg",
-        // "tc_fifo",
-        // "tc_error",
+        "tc_cfg",
+        "tc_fifo",
+        "tc_error",
         // "tc_flow_ctrl",
-        // "tc_reset",
-        // "tc_phase",
-        // "tc_stress_no_cts",
+        "tc_reset",
+        "tc_phase",
+        "tc_stress_no_cts",
     });
 }
 

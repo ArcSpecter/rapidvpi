@@ -1,27 +1,3 @@
-/*
- * MIT License
- *
- * Copyright (c) 2026 Rovshan Rustamov
- *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in all
- * copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- * SOFTWARE.
- */
-
 #ifndef VIP_UART_CORE_PINDEFS_HPP
 #define VIP_UART_CORE_PINDEFS_HPP
 
@@ -73,9 +49,12 @@ static constexpr unsigned UART_DATA_6 = 1u;
 static constexpr unsigned UART_DATA_7 = 2u;
 static constexpr unsigned UART_DATA_8 = 3u;
 
-inline std::string dut_name = "uart_core";
+inline constexpr char dut_name[] = "dut_wrapper";
 
-inline std::string clk = "clk";
+inline constexpr char clk[] = "clk";
+inline constexpr char sim_clk_enable[] = "sim_clk_enable";
+inline constexpr char sim_clk_period_ticks[] = "sim_clk_period_ticks";
+inline constexpr char sim_clk_stopped[] = "sim_clk_stopped";
 inline std::string rst_n = "rst_n";
 
 inline std::string uart_rx_i = "uart_rx_i";

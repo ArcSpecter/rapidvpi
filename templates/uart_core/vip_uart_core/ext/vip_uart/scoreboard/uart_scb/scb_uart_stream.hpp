@@ -1,27 +1,3 @@
-/*
- * MIT License
- *
- * Copyright (c) 2026 Rovshan Rustamov
- *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in all
- * copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- * SOFTWARE.
- */
-
 #ifndef VIP_UART_SCOREBOARD_UART_SCB_SCB_UART_STREAM_HPP
 #define VIP_UART_SCOREBOARD_UART_SCB_SCB_UART_STREAM_HPP
 
@@ -37,6 +13,12 @@
 
 namespace vip::uart {
 
+enum class UartUnexpectedPolicy : std::uint8_t {
+    Fail,
+    Warn,
+    ExternalOwner,
+};
+
 class ScbUartStream {
 public:
     explicit ScbUartStream(vip::common::Scoreboard& scb,
@@ -46,7 +28,16 @@ public:
     void end_case_check(bool fail_on_outstanding = true);
 
     void set_verbose(bool en) { verbose_ = en; }
-    void set_fail_on_unexpected(bool en) { fail_on_unexpected_ = en; }
+    void set_unexpected_policy(UartUnexpectedPolicy policy) {
+        unexpected_policy_ = policy;
+    }
+    [[nodiscard]] UartUnexpectedPolicy unexpected_policy() const {
+        return unexpected_policy_;
+    }
+    void set_fail_on_unexpected(bool en) {
+        set_unexpected_policy(
+            en ? UartUnexpectedPolicy::Fail : UartUnexpectedPolicy::Warn);
+    }
     void set_strict_status_compare(bool en) { strict_status_compare_ = en; }
     void set_params(UartParams params);
     [[nodiscard]] const UartParams& params() const { return params_; }
@@ -64,7 +55,7 @@ private:
     vip::common::Scoreboard& scb_;
     UartParams params_;
     bool verbose_ = false;
-    bool fail_on_unexpected_ = true;
+    UartUnexpectedPolicy unexpected_policy_ = UartUnexpectedPolicy::Fail;
     bool strict_status_compare_ = true;
 
     std::unordered_map<std::string, std::deque<UartFrame>> expected_;

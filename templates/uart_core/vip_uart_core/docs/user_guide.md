@@ -1,25 +1,3 @@
-MIT License
-
-Copyright (c) 2026 Rovshan Rustamov
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-
 # UART Core User Guide
 
 ## Table of Contents
@@ -30,6 +8,7 @@ SOFTWARE.
   - [3.1 Baud and Sampling Parameters](#31-baud-and-sampling-parameters)
   - [3.2 FIFO Parameters](#32-fifo-parameters)
   - [3.3 RTS/CTS Parameters](#33-rtscts-parameters)
+  - [3.4 Debug Parameter](#34-debug-parameter)
 - [4. Clock and Reset](#4-clock-and-reset)
 - [5. UART Pins](#5-uart-pins)
 - [6. Runtime Configuration Inputs](#6-runtime-configuration-inputs)
@@ -46,6 +25,7 @@ SOFTWARE.
 - [13. Event Pulse Outputs](#13-event-pulse-outputs)
 - [14. RTS/CTS Usage Model](#14-rtscts-usage-model)
 - [15. Integration Notes](#15-integration-notes)
+- [16. Simulation Wrapper and VIP Binding](#16-simulation-wrapper-and-vip-binding)
 
 ---
 
@@ -84,7 +64,9 @@ module uart_core #(
   parameter bit          CTS_ACTIVE_LOW     = 1'b1, // Physical CTS pin is asserted low
 
   parameter int unsigned RTS_DEASSERT_LEVEL = RX_FIFO_DEPTH - 2, // Deassert RTS when RX FIFO reaches this level
-  parameter int unsigned RTS_ASSERT_LEVEL   = RX_FIFO_DEPTH / 2  // Reassert RTS after RX FIFO drains to this level
+  parameter int unsigned RTS_ASSERT_LEVEL   = RX_FIFO_DEPTH / 2, // Reassert RTS after RX FIFO drains to this level
+
+  parameter bit          RTL_DBG            = 1'b1  // Enables guarded RTL debug printouts in simulation
 ) (
   input  wire                                      clk,
   input  wire                                      rst_n,
@@ -235,6 +217,12 @@ RTS_ASSERT_LEVEL < RTS_DEASSERT_LEVEL
 
 For meaningful RTS hysteresis, `RX_FIFO_DEPTH` should be large enough that these two thresholds are separated.
 
+### 3.4 Debug Parameter
+
+| Parameter | Default | Description |
+| --- | ---: | --- |
+| `RTL_DBG` | `1'b1` | Enables standardized, synthesis-guarded `[RTL]` debug printouts and is passed through unchanged by the simulation wrapper. |
+
 ---
 
 ## 4. Clock and Reset
@@ -245,6 +233,11 @@ For meaningful RTS hysteresis, `RX_FIFO_DEPTH` should be large enough that these
 | `rst_n` | Input | Active-low reset. |
 
 The UART RX serial input and CTS input are external asynchronous signals. `uart_core` handles the required synchronization internally before using them in the `clk` domain.
+
+This table describes direct synthesis integration of `uart_core`. In the
+verification hierarchy described in Section 16, `clk` is generated internally
+by `dut_wrapper` and is no longer a public wrapper input. `rst_n` remains a
+VIP-driven wrapper input.
 
 ---
 
@@ -534,3 +527,125 @@ For a bus-controlled UART endpoint, the wrapper typically maps register writes a
 For a UART-commanded bridge, the wrapper typically feeds `rx_byte_*` into a frame decoder and feeds response bytes back through `tx_byte_*`.
 
 The `uart_core` interface is stable across RTS/CTS configurations. Do not rely on conditional ports or preprocessor changes for flow-control variants.
+
+---
+
+## 16. Simulation Wrapper and VIP Binding
+
+Verification must elaborate `dut_wrapper`, not the bare `uart_core` module. The
+root `dut_wrapper.sv` is simulation-only and excluded from synthesis and reusable
+RTL export manifests. It instantiates the real synthesizable top exactly once:
+
+```text
+dut_wrapper
+├── sim_native_clock_gen u_sim_clk
+└── uart_core u_dut
+```
+
+The VIP DUT name is `dut_wrapper`. Functional DUT-internal diagnostics descend
+through `dut_wrapper.u_dut`; wrapper ports and native-clock infrastructure are
+directly below `dut_wrapper`.
+
+### Wrapper parameters and functional ports
+
+`dut_wrapper` mirrors and explicitly passes these `uart_core` parameters without
+changing their types or defaults:
+
+| Parameter | Type | Default |
+| --- | --- | --- |
+| `BAUD_ACC_W` | `int unsigned` | `32` |
+| `OVERSAMPLE` | `int unsigned` | `16` |
+| `RX_FIFO_DEPTH` | `int unsigned` | `16` |
+| `TX_FIFO_DEPTH` | `int unsigned` | `16` |
+| `HAS_RTS_CTS` | `bit` | `1'b0` |
+| `RTS_ACTIVE_LOW` | `bit` | `1'b1` |
+| `CTS_ACTIVE_LOW` | `bit` | `1'b1` |
+| `RTS_DEASSERT_LEVEL` | `int unsigned` | `RX_FIFO_DEPTH - 2` |
+| `RTS_ASSERT_LEVEL` | `int unsigned` | `RX_FIFO_DEPTH / 2` |
+| `RTL_DBG` | `bit` | `1'b1` |
+
+The wrapper preserves every functional `uart_core` port except `clk`, which is
+generated internally. All ports are unsigned packed scalar/vector wires with no
+unpacked dimensions.
+
+| Wrapper-visible ports | Direction | Width |
+| --- | --- | ---: |
+| `rst_n`, `uart_rx_i`, `uart_cts_i` | Input | 1 each |
+| `uart_tx_o`, `uart_rts_o` | Output | 1 each |
+| `cfg_enable`, `cfg_rx_enable`, `cfg_tx_enable`, `cfg_hw_flow_enable` | Input | 1 each |
+| `cfg_baud_inc` | Input | `BAUD_ACC_W` |
+| `cfg_parity_mode`, `cfg_stop_bits`, `cfg_data_bits` | Input | 2 each |
+| `ctrl_rx_fifo_clear`, `ctrl_tx_fifo_clear` | Input | 1 each |
+| `tx_byte_valid`, `tx_byte_data` | Input | 1, 8 |
+| `tx_byte_ready` | Output | 1 |
+| `rx_byte_ready` | Input | 1 |
+| `rx_byte_valid`, `rx_byte_data` | Output | 1, 8 |
+| `rx_byte_frame_error`, `rx_byte_parity_error`, `rx_byte_break_detect` | Output | 1 each |
+| `rx_fifo_level` | Output | `$clog2(RX_FIFO_DEPTH + 1)` |
+| `tx_fifo_level` | Output | `$clog2(TX_FIFO_DEPTH + 1)` |
+| `rx_fifo_empty`, `rx_fifo_full`, `tx_fifo_empty`, `tx_fifo_full` | Output | 1 each |
+| `rx_busy`, `tx_busy`, `cts_active`, `rts_active`, `cts_blocked` | Output | 1 each |
+| `event_rx_overrun`, `event_rx_frame_error`, `event_rx_parity_error`, `event_rx_break_detect`, `event_tx_done` | Output | 1 each |
+
+`rst_n` is the active-low, wrapper-visible reset and remains VIP driven. The
+wrapper neither generates nor modifies reset. DUT sequential logic uses reset
+synchronously to the internally generated `clk`, so the VIP must run the clock
+while applying and releasing reset according to the established test sequence.
+
+There is no compile-time interface-selection macro. Questa and Verilator expose
+the same wrapper port set. `HAS_RTS_CTS` selects flow-control logic by parameter
+(default `1'b0`); the RTS/CTS pins remain present in either setting.
+
+### Native `clk` contract
+
+The real-DUT input clock `clk` is generated inside `dut_wrapper`; it is not a
+public wrapper input and must never be driven edge-by-edge by the VIP. The VIP
+registers the following VPI-visible signals and constructs one
+`vip::common::Clock` using `NativeClockCfg`:
+
+| Role | Exact VPI-visible name | Width | Initial/default behavior |
+| --- | --- | ---: | --- |
+| Generated waveform | `clk` | 1 | Parked low |
+| Run/stop control | `sim_clk_enable` | 1 | `0` (disabled) |
+| Full-period control | `sim_clk_period_ticks` | 64 | `10000` ticks (10 ns / 100 MHz nominal) |
+| Stopped acknowledgement | `sim_clk_stopped` | 1 | `1` when stopped and low |
+
+One period tick is 1 ps. The VIP writes `sim_clk_period_ticks` before changing
+`sim_clk_enable` from 0 to 1. That enable write produces the first rising edge in
+the same simulation time slot, which preserves deterministic `start_at()`
+behavior. A stop request takes effect at the next half-cycle boundary; the clock
+parks low before `sim_clk_stopped` asserts. Periods below two ticks are clamped
+to two ticks.
+
+There are no DUT-generated or protocol-generated clock ports in `uart_core`, so
+there are no observation-only clock outputs and no additional native-clock
+control triplets. `sim_keepalive` is wrapper timing-queue infrastructure only.
+The VIP must never register, drive, await, or treat it as testcase state.
+
+### Simulator and plugin prerequisites
+
+The RTL-side compile targets are:
+
+```bash
+cmake --build cmake-build-release --target sim_questa_init
+cmake --build cmake-build-release --target sim_questa_compile
+cmake --build cmake-build-release --target sim_verilator_compile
+```
+
+Questa loads the separately built sibling plugin from:
+
+```text
+../vip_uart_core/cmake-build-release/libvip_uart_core.so
+```
+
+Verilator requires the Verilator-flavor sibling plugin produced by target
+`verilator_uart_core` at:
+
+```text
+../vip_uart_core/cmake-build-verilator/libvip_uart_core.so
+```
+
+The two plugin flavors are not interchangeable. The RTL repository does not
+configure or build the sibling VIP. The Verilator executable is generated at
+`cmake-build-release/verilator/obj_dir/sim_verilator` and loads the latter plugin
+with `+verilator+vpi+<absolute-plugin-path>`.

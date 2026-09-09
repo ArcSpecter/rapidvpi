@@ -1,27 +1,3 @@
-/*
- * MIT License
- *
- * Copyright (c) 2026 Rovshan Rustamov
- *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in all
- * copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- * SOFTWARE.
- */
-
 #include "vip_uart/agents/uart_rx/rx.hpp"
 
 #include <stdexcept>
@@ -93,9 +69,18 @@ void UartRx::set_params(UartParams params) {
 
 void UartRx::reset_case() {
     for (auto& port : ports_) {
+        ++port.capture_generation;
         port.history.clear();
         port.cts_active = true;
         port.observed_count = 0u;
+        port.started_count = 0u;
+        port.last_start_tick = vip::common::INVALID_TICK;
+        port.cts_inactive_after_count = 0u;
+        port.cts_schedule_pending = false;
+        port.cts_schedule_fired = false;
+        port.last_driven_cts_valid = false;
+        port.last_driven_cts_active = true;
+        port.last_cts_transition_tick = vip::common::INVALID_TICK;
     }
 }
 
@@ -115,15 +100,52 @@ std::size_t UartRx::observed_count(const std::string& port) const {
     return port_(port).observed_count;
 }
 
+std::size_t UartRx::started_count(const std::string& port) const {
+    return port_(port).started_count;
+}
+
+test::sim_tick_t UartRx::last_start_tick(const std::string& port) const {
+    return port_(port).last_start_tick;
+}
+
 void UartRx::clear_history(const std::string& port) {
     auto& state = port_(port);
+    ++state.capture_generation;
     state.history.clear();
     state.observed_count = 0u;
+    state.started_count = 0u;
+    state.last_start_tick = vip::common::INVALID_TICK;
 }
 
 UartRx::RunUserTask UartRx::wait_for_frames(const std::string& port, const std::size_t count) {
     while (observed_count(port) < count) {
         co_await wait_clks_(params_.idle_poll_clks);
+    }
+    co_return;
+}
+
+UartRx::RunUserTask UartRx::wait_for_observed_count(
+    const std::string& port,
+    const std::size_t count,
+    const unsigned timeout_cycles,
+    bool& reached) {
+    reached = observed_count(port) >= count;
+    for (unsigned cycle = 0u; cycle < timeout_cycles && !reached; ++cycle) {
+        co_await wait_clks_(1u);
+        reached = observed_count(port) >= count;
+    }
+    co_return;
+}
+
+UartRx::RunUserTask UartRx::wait_for_started_count(
+    const std::string& port,
+    const std::size_t count,
+    const unsigned timeout_cycles,
+    bool& reached) {
+    reached = started_count(port) >= count;
+    for (unsigned cycle = 0u; cycle < timeout_cycles && !reached; ++cycle) {
+        co_await wait_clks_(1u);
+        reached = started_count(port) >= count;
     }
     co_return;
 }
@@ -150,6 +172,34 @@ UartRx::RunUserTask UartRx::drive_cts_now(const std::string& port, const bool ac
     state.cts_active = active;
     co_await drive_cts_(state);
     co_return;
+}
+
+void UartRx::arm_cts_inactive_after_observed_count(
+    const std::string& port,
+    const std::size_t observed_count) {
+    auto& state = port_(port);
+    if (!state.cts_drive_enable || state.cfg.cts_net.empty()) {
+        throw std::invalid_argument("vip_uart UartRx scheduled CTS requires an owned CTS net");
+    }
+    if (observed_count <= state.observed_count) {
+        throw std::invalid_argument(
+            "vip_uart UartRx scheduled CTS count must be in the future");
+    }
+    state.cts_inactive_after_count = observed_count;
+    state.cts_schedule_pending = true;
+    state.cts_schedule_fired = false;
+}
+
+bool UartRx::scheduled_cts_pending(const std::string& port) const {
+    return port_(port).cts_schedule_pending;
+}
+
+bool UartRx::scheduled_cts_fired(const std::string& port) const {
+    return port_(port).cts_schedule_fired;
+}
+
+test::sim_tick_t UartRx::last_cts_transition_tick(const std::string& port) const {
+    return port_(port).last_cts_transition_tick;
 }
 
 UartRx::PortState& UartRx::port_(const std::string& name) {

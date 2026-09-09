@@ -1,26 +1,15 @@
-MIT License
-
-Copyright (c) 2026 Rovshan Rustamov
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-
 # UART Core Design Guide
+
+---
+
+## Project classification
+
+Project type: `reusable_ip`
+
+This repository contains a reusable synthesizable RTL IP block. It owns the UART core RTL under `./src` and may integrate reusable RTL dependencies already present under `./ext`.
+
+---
+
 
 ## Table of Contents
 
@@ -46,6 +35,7 @@ SOFTWARE.
 - [14. Reset, Clear, and Enable Behavior](#14-reset-clear-and-enable-behavior)
 - [15. Implementation Rules for Codex](#15-implementation-rules-for-codex)
 - [16. Bring-Up and Verification Checklist](#16-bring-up-and-verification-checklist)
+- [17. Simulation Wrapper and Dual-Simulator Integration](#17-simulation-wrapper-and-dual-simulator-integration)
 
 ---
 
@@ -89,6 +79,7 @@ Type B uart_axil_bridge:
 |             | `uart_byte_fifo.sv`    | Small byte FIFO for RX/TX buffering                                                                                                        |
 |             | `uart_hw_flow_ctrl.sv` | Optional RTS/CTS hardware flow-control helper: synchronizes CTS, normalizes polarity, gates TX start, and generates RTS from RX FIFO level |
 |             | `uart_core.sv`         | Wraps RX sync, baud generator, RX, TX, FIFOs, and optional RTS/CTS flow control into a clean byte-stream interface                         |
+| Simulation  | `../dut_wrapper.sv`    | Simulation-only top that generates the controllable `clk` and instantiates `uart_core` as `u_dut`; excluded from synthesis/export manifests |
 
 ---
 
@@ -1136,3 +1127,77 @@ Codex should implement the design so these behaviors can be verified later.
 - With `HAS_RTS_CTS=1` and `cfg_hw_flow_enable=1`, inactive CTS blocks only new character launch.
 - `cts_blocked` asserts only when a byte is ready to launch and CTS blocks it.
 - RTS deasserts at `RTS_DEASSERT_LEVEL` and reasserts at `RTS_ASSERT_LEVEL`.
+
+---
+
+## 17. Simulation Wrapper and Dual-Simulator Integration
+
+The synthesizable product top remains `uart_core`. Simulation uses the root-level
+`dut_wrapper.sv` file and elaborates `dut_wrapper`, which instantiates exactly one
+`uart_core` as `u_dut`. The wrapper is simulation-only, is compiled separately
+from `RTL_SOURCES`, and must remain absent from synthesis and reusable-IP export
+manifests such as `scripts/cmake/questa_modules.cmake`.
+
+| Integration fact | Value |
+| --- | --- |
+| Wrapper file | `dut_wrapper.sv` |
+| Simulation top | `dut_wrapper` |
+| Real RTL top | `uart_core` |
+| DUT instance | `u_dut` (`dut_wrapper.u_dut`) |
+| Wrapper time unit / precision | `1 ns` / `1 ps` |
+| Questa VIP plugin | `../vip_uart_core/cmake-build-release/libvip_uart_core.so` |
+| Verilator VIP plugin | `../vip_uart_core/cmake-build-verilator/libvip_uart_core.so` |
+
+The wrapper mirrors and explicitly passes through all `uart_core` parameters:
+`BAUD_ACC_W`, `OVERSAMPLE`, `RX_FIFO_DEPTH`, `TX_FIFO_DEPTH`, `HAS_RTS_CTS`,
+`RTS_ACTIVE_LOW`, `CTS_ACTIVE_LOW`, `RTS_DEASSERT_LEVEL`, `RTS_ASSERT_LEVEL`,
+and `RTL_DBG`. It exposes every functional `uart_core` port unchanged except the
+external clock input `clk`, which is generated internally. `rst_n` remains an
+active-low wrapper input driven by the VIP; the wrapper does not generate or
+modify reset.
+
+### Clock ownership and native control
+
+| Clock | Real DUT direction | Owner | Build-mode presence | Wrapper controls/default | Notes |
+| --- | --- | --- | --- | --- | --- |
+| `clk` | Input | Wrapper/VIP | Always | `sim_clk_enable` (1 bit), `sim_clk_period_ticks` (64 bits), `sim_clk_stopped` (1 bit); default `10000` ticks | Internally generated waveform; nominal 10 ns full period (100 MHz) |
+
+`uart_core` has no DUT-generated clock outputs. The generated waveform remains
+VPI-visible as `dut_wrapper.clk`, but `clk` is not a public wrapper input and the
+VIP must not drive its edges directly. The control signals are internal,
+VPI-visible wrapper signals. One period tick is 1 ps, all clock enables initialize
+to zero, and a disabled clock is parked low with `sim_clk_stopped=1`.
+
+The VIP programs `sim_clk_period_ticks` before asserting `sim_clk_enable`. The
+0-to-1 enable write produces the first rising edge in that same simulation time
+slot. A stop request completes at the next half-cycle boundary, parks `clk` low,
+and then asserts `sim_clk_stopped`. `sim_keepalive` is Verilator timing-queue
+infrastructure only; it is not connected to `u_dut` and must not be used as
+testcase state.
+
+There is no compile-time interface-selection mode or project definition in this
+core. Questa and Verilator compile the same unconditional port set. RTS/CTS is
+selected through the `HAS_RTS_CTS` parameter (default `1'b0`), while the physical
+RTS/CTS ports remain present in every configuration.
+
+### Configured build flows
+
+Configure the local RTL build tree and compile without running a simulation:
+
+```bash
+cmake -S . -B ./build -DCMAKE_BUILD_TYPE=Release
+cmake --build ./build --target sim_questa_init
+cmake --build ./build --target sim_questa_compile
+cmake --build ./build --target sim_verilator_compile
+```
+
+The Questa flow compiles the dependency-ordered synthesizable sources and then
+`dut_wrapper.sv` into `work`. The Verilator flow compiles the same flat source
+order followed by `dut_wrapper.sv`, with top `dut_wrapper`, 1 ps precision, and
+VPI enabled. There are no external RTL dependency libraries for this core.
+
+Run targets require the matching separately built sibling VIP plugin. The
+Verilator plugin is produced by the sibling target `verilator_uart_core`; this
+RTL project does not configure or build the sibling VIP. Universal native-clock
+generator behavior and wrapper coding rules are defined by
+`docs/rtl_design_guide.md`.

@@ -1,27 +1,3 @@
-/*
- * MIT License
- *
- * Copyright (c) 2026 Rovshan Rustamov
- *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in all
- * copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- * SOFTWARE.
- */
-
 #include "vip_uart/agents/uart_tx/tx.hpp"
 
 #include <stdexcept>
@@ -97,6 +73,9 @@ void UartTx::reset_case() {
         port.history.clear();
         port.next_bad_stop = false;
         port.next_bad_parity = false;
+        port.last_rts_valid = false;
+        port.last_rts_active = false;
+        port.rts_transitions.clear();
     }
     ticket_done_.clear();
 }
@@ -176,6 +155,7 @@ UartTx::TxItem UartTx::make_item_(PortState& port, const std::uint8_t data) {
     item.force_bad_parity = port.next_bad_parity;
     item.frame.framing_error = item.force_bad_stop;
     item.frame.parity_error = item.force_bad_parity;
+    item.frame.break_detect = item.force_bad_stop && item.frame.data == 0u;
     port.next_bad_stop = false;
     port.next_bad_parity = false;
 
@@ -233,6 +213,54 @@ void UartTx::set_rts_active_low(const std::string& port, const bool active_low) 
 
 void UartTx::set_rts_wait_timeout_clks(const std::string& port, const unsigned clks) {
     port_(port).rts_wait_timeout_clks = clks;
+}
+
+UartTx::RunUserTask UartTx::sample_rts_active(const std::string& port_name,
+                                              bool& active) {
+    auto& port = port_(port_name);
+    if (port.cfg.rts_net.empty()) {
+        throw std::invalid_argument("vip_uart UartTx port has no rts_net");
+    }
+    bool physical = false;
+    co_await read_bit_(port.cfg.rts_net, physical);
+    active = physical_to_active(physical, port.cfg.rts_active_low);
+    record_rts_(port, active);
+    co_return;
+}
+
+UartTx::RunUserTask UartTx::wait_for_rts_state(const std::string& port_name,
+                                               const bool expected_active,
+                                               const unsigned timeout_cycles,
+                                               bool& reached) {
+    reached = false;
+    for (unsigned cycle = 0u; cycle < timeout_cycles; ++cycle) {
+        bool active = false;
+        co_await sample_rts_active(port_name, active);
+        if (active == expected_active) {
+            reached = true;
+            co_return;
+        }
+        co_await wait_clks_(1u);
+    }
+    bool active = false;
+    co_await sample_rts_active(port_name, active);
+    reached = active == expected_active;
+    co_return;
+}
+
+std::vector<UartRtsTransition> UartTx::rts_history(
+    const std::string& port) const {
+    return port_(port).rts_transitions;
+}
+
+void UartTx::record_rts_(PortState& port, const bool active) {
+    if (!port.last_rts_valid || port.last_rts_active != active) {
+        port.last_rts_valid = true;
+        port.last_rts_active = active;
+        port.rts_transitions.push_back(
+            UartRtsTransition{.active = active,
+                              .tick = vip::common::sim_time_ticks()});
+    }
 }
 
 void UartTx::arm_next_framing_error(const std::string& port) {

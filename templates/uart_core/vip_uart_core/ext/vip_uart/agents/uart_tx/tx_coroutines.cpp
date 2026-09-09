@@ -1,27 +1,3 @@
-/*
- * MIT License
- *
- * Copyright (c) 2026 Rovshan Rustamov
- *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in all
- * copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- * SOFTWARE.
- */
-
 #include "vip_uart/agents/uart_tx/tx.hpp"
 
 #include "vip_common/common/logger.hpp"
@@ -123,6 +99,7 @@ UartTx::RunUserTask UartTx::wait_rts_active_(PortState& port, bool& active) {
         bool physical = false;
         co_await read_bit_(port.cfg.rts_net, physical);
         active = physical_to_active(physical, port.cfg.rts_active_low);
+        record_rts_(port, active);
         if (active) {
             co_return;
         }
@@ -150,8 +127,14 @@ UartTx::RunUserTask UartTx::send_item_(PortState& port, TxItem item) {
     const bool start_level = !params_.idle_high;
     const bool stop_level = params_.idle_high;
 
+    if (!item.use_time_delay || item.align_to_clock_phase) {
+        // The agent may enter here immediately after reset/RTS read-only
+        // sampling. Cross a known future edge before presenting a new start
+        // bit so the write cannot be attributed to the already observed slot.
+        co_await utils_.clock(1, 1);
+    }
+
     if (item.use_time_delay && item.align_to_clock_phase) {
-        co_await utils_.clock_to_write(1, 1);
         if (item.phase_offset_ps != 0u) {
             co_await utils_.delay<test::ps>(item.phase_offset_ps);
         }

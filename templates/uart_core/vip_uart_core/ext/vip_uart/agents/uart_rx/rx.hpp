@@ -1,27 +1,3 @@
-/*
- * MIT License
- *
- * Copyright (c) 2026 Rovshan Rustamov
- *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in all
- * copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- * SOFTWARE.
- */
-
 #ifndef VIP_UART_AGENTS_UART_RX_RX_HPP
 #define VIP_UART_AGENTS_UART_RX_RX_HPP
 
@@ -72,14 +48,30 @@ public:
     [[nodiscard]] std::vector<UartFrame> get_history(const std::string& port) const;
     [[nodiscard]] std::size_t history_size(const std::string& port) const;
     [[nodiscard]] std::size_t observed_count(const std::string& port) const;
+    [[nodiscard]] std::size_t started_count(const std::string& port) const;
+    [[nodiscard]] test::sim_tick_t last_start_tick(const std::string& port) const;
     [[nodiscard]] std::size_t port_count() const { return ports_.size(); }
     void clear_history(const std::string& port);
     RunUserTask wait_for_frames(const std::string& port, std::size_t count);
+    RunUserTask wait_for_observed_count(const std::string& port,
+                                        std::size_t count,
+                                        unsigned timeout_cycles,
+                                        bool& reached);
+    RunUserTask wait_for_started_count(const std::string& port,
+                                       std::size_t count,
+                                       unsigned timeout_cycles,
+                                       bool& reached);
 
     void set_cts_drive_enable(const std::string& port, bool en);
     void set_cts_active_low(const std::string& port, bool active_low);
     void set_cts_active(const std::string& port, bool active);
     RunUserTask drive_cts_now(const std::string& port, bool active);
+    void arm_cts_inactive_after_observed_count(const std::string& port,
+                                               std::size_t observed_count);
+    [[nodiscard]] bool scheduled_cts_pending(const std::string& port) const;
+    [[nodiscard]] bool scheduled_cts_fired(const std::string& port) const;
+    [[nodiscard]] test::sim_tick_t last_cts_transition_tick(
+        const std::string& port) const;
 
 private:
     struct PortState {
@@ -89,6 +81,15 @@ private:
         bool cts_drive_enable = false;
         bool cts_active = true;
         std::size_t observed_count = 0u;
+        std::size_t started_count = 0u;
+        std::uint64_t capture_generation = 0u;
+        test::sim_tick_t last_start_tick = vip::common::INVALID_TICK;
+        std::size_t cts_inactive_after_count = 0u;
+        bool cts_schedule_pending = false;
+        bool cts_schedule_fired = false;
+        bool last_driven_cts_valid = false;
+        bool last_driven_cts_active = true;
+        test::sim_tick_t last_cts_transition_tick = vip::common::INVALID_TICK;
     };
 
     TestBase& tb_;
@@ -113,7 +114,10 @@ private:
                              test::sim_tick_t* time_tick = nullptr);
     RunUserTask reset_asserted_(bool& asserted);
     RunUserTask drive_cts_(PortState& port);
-    RunUserTask capture_frame_(PortState& port, UartFrame& frame);
+    RunUserTask capture_frame_(PortState& port,
+                               std::uint64_t expected_generation,
+                               UartFrame& frame,
+                               bool& completed);
 };
 
 } // namespace vip::uart

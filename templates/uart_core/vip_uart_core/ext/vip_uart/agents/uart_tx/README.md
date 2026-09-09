@@ -1,25 +1,3 @@
-MIT License
-
-Copyright (c) 2026 Rovshan Rustamov
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-
 # vip_uart TX Agent
 
 ## Table of contents
@@ -39,6 +17,13 @@ The agent supports 5 to 8 data bits, one or two stop bits, none/even/odd
 parity, configurable bit timing in testbench clock edges, optional
 phase-offset frame launch with baud-derived time delays, inter-frame gaps, bad
 parity injection, and bad stop-bit framing injection.
+
+For the normal clock-counted API, the agent may be entered after reset or RTS
+read-only sampling. It crosses the next parent-clock rising edge with the line
+idle, then presents the start bit from a fresh post-edge write phase. Each
+following symbol is likewise changed only after the preceding sampling edge;
+the final stop bit is held through its full interval before idle retirement and
+ticket completion.
 
 ## 2. Port map
 
@@ -60,6 +45,11 @@ frame already in progress, matching normal UART RTS behavior.
 
 `set_rts_wait_timeout_clks()` can turn a stuck inactive RTS into a scoreboard
 rule event.
+
+Tests that need public logical-state evidence can use
+`sample_rts_active()`, `wait_for_rts_state()`, and `rts_history()`. The history
+contains logical transitions and their simulator ticks, and is cleared by
+`reset_case()`.
 
 ## 4. Phase-offset launch
 
@@ -89,6 +79,9 @@ frame start needs an explicit phase offset.
 - `set_respect_rts(port, enable)`
 - `set_rts_active_low(port, active_low)`
 - `set_rts_wait_timeout_clks(port, clks)`
+- `sample_rts_active(port, active)`
+- `wait_for_rts_state(port, active, timeout_clks, reached)`
+- `rts_history(port)`
 - `set_auto_expect(port, enable)`
 - `arm_next_framing_error(port)`
 - `arm_next_parity_error(port)`

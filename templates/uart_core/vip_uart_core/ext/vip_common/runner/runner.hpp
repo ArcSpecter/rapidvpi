@@ -1,27 +1,3 @@
-/*
- * MIT License
- *
- * Copyright (c) 2026 Rovshan Rustamov
- *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in all
- * copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- * SOFTWARE.
- */
-
 // vip_common/runner/runner.hpp
 //
 // Generic testcase runner/orchestrator.
@@ -61,6 +37,7 @@ public:
     };
 
     using CaseHook = std::function<void(const CaseDesc&)>;
+    using CaseAsyncHook = std::function<RunUserTask(const CaseDesc&)>;
     using AfterAllHook = std::function<void()>;
 
     explicit Runner(TestBase& tb, AfterAllHook after_all = {});
@@ -91,6 +68,12 @@ public:
     // Optional hooks
     void set_before_case_hook(CaseHook h) { before_case_ = std::move(h); }
     void set_after_case_hook(CaseHook h) { after_case_ = std::move(h); }
+    void set_between_case_hook(CaseAsyncHook h) { between_case_ = std::move(h); }
+
+    // Additive infrastructure stop used by awaited cleanup when stimulus
+    // ownership cannot be proven before the next testcase.
+    void request_stop() { stop_requested_ = true; }
+    bool stop_requested() const { return stop_requested_; }
 
     // Called once after all cases complete (or immediately if no cases selected).
     // Intended for project-owned cleanup such as trace finalization.
@@ -113,7 +96,9 @@ private:
 
     CaseHook before_case_;
     CaseHook after_case_;
+    CaseAsyncHook between_case_;
     AfterAllHook after_all_;
+    bool stop_requested_ = false;
 
     // Logger (VPI backed)
     mutable SimLogger log_;

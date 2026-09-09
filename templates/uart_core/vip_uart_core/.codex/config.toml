@@ -1,0 +1,8 @@
+# Minimal reusable VIP development workflow.
+# One specialist at a time; all specialists work in the same project repository.
+sandbox_mode = "workspace-write"
+approval_policy = "on-request"
+
+[agents]
+enabled = true
+max_concurrent_threads_per_session = 1

@@ -1,27 +1,3 @@
-/*
- * MIT License
- *
- * Copyright (c) 2026 Rovshan Rustamov
- *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in all
- * copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- * SOFTWARE.
- */
-
 #include "vip_uart/agents/uart_rx/rx.hpp"
 
 #include "vip_common/common/logger.hpp"
@@ -54,7 +30,12 @@ UartRx::RunTask UartRx::agent(const unsigned idx) {
         }
 
         UartFrame frame;
-        co_await capture_frame_(port, frame);
+        const std::uint64_t generation = port.capture_generation;
+        bool completed = false;
+        co_await capture_frame_(port, generation, frame, completed);
+        if (!completed || generation != port.capture_generation) {
+            continue;
+        }
 
         port.observed_count++;
         if (port.capture_enable) {
@@ -65,6 +46,17 @@ UartRx::RunTask UartRx::agent(const unsigned idx) {
         }
         if (scb_rules_ != nullptr) {
             scb_rules_->observe_frame(port.cfg.name, frame);
+        }
+
+        if (port.cts_schedule_pending &&
+            port.observed_count >= port.cts_inactive_after_count) {
+            port.cts_schedule_pending = false;
+            port.cts_active = false;
+            // The final stop-bit sample was read-only. Cross a later clock edge
+            // before changing the CTS policy for the next UART character.
+            co_await wait_clks_(1u);
+            co_await drive_cts_(port);
+            port.cts_schedule_fired = true;
         }
 
         if (verbose_) {
@@ -121,13 +113,24 @@ UartRx::RunUserTask UartRx::drive_cts_(PortState& port) {
     w.write(port.cfg.cts_net, physical ? 1 : 0);
     co_await w;
 
+    if (!port.last_driven_cts_valid ||
+        port.last_driven_cts_active != port.cts_active) {
+        port.last_driven_cts_valid = true;
+        port.last_driven_cts_active = port.cts_active;
+        port.last_cts_transition_tick = vip::common::sim_time_ticks();
+    }
+
     if (scb_rules_ != nullptr) {
         scb_rules_->observe_cts_drive(port.cfg.name, port.cts_active);
     }
     co_return;
 }
 
-UartRx::RunUserTask UartRx::capture_frame_(PortState& port, UartFrame& frame) {
+UartRx::RunUserTask UartRx::capture_frame_(PortState& port,
+                                           const std::uint64_t expected_generation,
+                                           UartFrame& frame,
+                                           bool& completed) {
+    completed = false;
     frame.data_bits = params_.data_bits;
     frame.stop_bits = params_.stop_bits;
     frame.parity = params_.parity;
@@ -136,11 +139,19 @@ UartRx::RunUserTask UartRx::capture_frame_(PortState& port, UartFrame& frame) {
     const bool stop_level = params_.idle_high;
 
     co_await wait_clks_(params_.sample_clk_index);
+    if (expected_generation != port.capture_generation) {
+        co_return;
+    }
 
     bool start_sample = stop_level;
     test::sim_tick_t sample_time_tick = vip::common::INVALID_TICK;
     co_await sample_line_(port, start_sample, &sample_time_tick);
+    if (expected_generation != port.capture_generation) {
+        co_return;
+    }
     frame.start_tick = sample_time_tick;
+    port.started_count++;
+    port.last_start_tick = sample_time_tick;
     if (start_sample != start_level) {
         frame.framing_error = true;
     }
@@ -148,8 +159,14 @@ UartRx::RunUserTask UartRx::capture_frame_(PortState& port, UartFrame& frame) {
     std::uint8_t data = 0u;
     for (unsigned bit = 0u; bit < params_.data_bits; ++bit) {
         co_await wait_clks_(params_.bit_clks);
+        if (expected_generation != port.capture_generation) {
+            co_return;
+        }
         bool sample = false;
         co_await sample_line_(port, sample);
+        if (expected_generation != port.capture_generation) {
+            co_return;
+        }
 
         const unsigned dst_bit = params_.lsb_first ? bit : (params_.data_bits - 1u - bit);
         if (sample) {
@@ -160,8 +177,14 @@ UartRx::RunUserTask UartRx::capture_frame_(PortState& port, UartFrame& frame) {
 
     if (params_.parity_enable()) {
         co_await wait_clks_(params_.bit_clks);
+        if (expected_generation != port.capture_generation) {
+            co_return;
+        }
         bool parity_sample = false;
         co_await sample_line_(port, parity_sample);
+        if (expected_generation != port.capture_generation) {
+            co_return;
+        }
         const bool expected = uart_parity_bit(frame.data, params_);
         frame.parity_error = parity_sample != expected;
     }
@@ -169,8 +192,14 @@ UartRx::RunUserTask UartRx::capture_frame_(PortState& port, UartFrame& frame) {
     bool all_stop_low = true;
     for (unsigned stop = 0u; stop < params_.stop_bits; ++stop) {
         co_await wait_clks_(params_.bit_clks);
+        if (expected_generation != port.capture_generation) {
+            co_return;
+        }
         bool stop_sample = false;
         co_await sample_line_(port, stop_sample, &sample_time_tick);
+        if (expected_generation != port.capture_generation) {
+            co_return;
+        }
         if (stop_sample != stop_level) {
             frame.framing_error = true;
         }
@@ -181,6 +210,10 @@ UartRx::RunUserTask UartRx::capture_frame_(PortState& port, UartFrame& frame) {
         && frame.data == 0u
         && all_stop_low;
     frame.end_tick = sample_time_tick;
+    if (expected_generation != port.capture_generation) {
+        co_return;
+    }
+    completed = true;
     co_return;
 }
 

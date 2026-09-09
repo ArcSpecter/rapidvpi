@@ -1,27 +1,3 @@
-/*
- * MIT License
- *
- * Copyright (c) 2026 Rovshan Rustamov
- *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in all
- * copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- * SOFTWARE.
- */
-
 #include "agents/uart_core_intf/intf.hpp"
 
 #include <utility>
@@ -98,7 +74,7 @@ UartCoreIntf::RunUserTask UartCoreIntf::drive_idle() {
 }
 
 UartCoreIntf::RunUserTask UartCoreIntf::apply_config(const UartCoreConfig& cfg) {
-    co_await utils_.clock_to_write(1, 0);
+    co_await utils_.clock(1, 1);
     co_await write_config_(cfg);
     co_return;
 }
@@ -131,37 +107,26 @@ UartCoreIntf::RunUserTask UartCoreIntf::try_push_tx_byte(const std::uint8_t data
                                                          bool& accepted,
                                                          const unsigned timeout_cycles) {
     accepted = false;
-    bool at_low_phase = true;
 
-    co_await utils_.clock_to_write(1, 0);
-    co_await write_tx_valid_(false, data);
-
-    co_await utils_.write_barrier();
+    co_await utils_.clock(1, 1);
     co_await write_tx_valid_(true, data);
 
     for (unsigned cycle = 0u; cycle < timeout_cycles; ++cycle) {
+        co_await utils_.clock(1, 0);
+
         auto r = tb_.getCoRead();
         r.read(tx_byte_ready);
         co_await r;
 
         const bool ready_for_edge = (r.getNum(tx_byte_ready) & 1u) != 0u;
         co_await utils_.clock(1, 1);
-        at_low_phase = false;
 
         if (ready_for_edge) {
             accepted = true;
             break;
         }
-
-        co_await utils_.clock(1, 0);
-        at_low_phase = true;
     }
 
-    if (!at_low_phase) {
-        co_await utils_.clock_to_write(1, 0);
-    } else {
-        co_await utils_.write_barrier();
-    }
     co_await write_tx_valid_(false, data);
 
     co_return;
@@ -171,7 +136,7 @@ UartCoreIntf::RunUserTask UartCoreIntf::pop_rx_byte(UartCoreRxByte& rec,
                                                     const unsigned timeout_cycles) {
     rec = UartCoreRxByte{};
 
-    co_await utils_.clock_to_write(1, 0);
+    co_await utils_.clock(1, 1);
     {
         auto w = tb_.getCoWrite();
         w.write(rx_byte_ready, 0);
@@ -179,42 +144,53 @@ UartCoreIntf::RunUserTask UartCoreIntf::pop_rx_byte(UartCoreRxByte& rec,
     }
 
     for (unsigned cycle = 0u; cycle < timeout_cycles; ++cycle) {
-        auto r = tb_.getCoRead();
-        r.read(rx_byte_valid);
-        r.read(rx_byte_data);
-        r.read(rx_byte_frame_error);
-        r.read(rx_byte_parity_error);
-        r.read(rx_byte_break_detect);
-        co_await r;
+        co_await utils_.clock(1, 0);
 
-        if ((r.getNum(rx_byte_valid) & 1u) != 0u) {
-            rec.valid = true;
-            rec.data = static_cast<std::uint8_t>(r.getNum(rx_byte_data) & 0xffu);
-            rec.frame_error = (r.getNum(rx_byte_frame_error) & 1u) != 0u;
-            rec.parity_error = (r.getNum(rx_byte_parity_error) & 1u) != 0u;
-            rec.break_detect = (r.getNum(rx_byte_break_detect) & 1u) != 0u;
-            rec.time_tick = r.getTime<test::ticks>();
-            break;
-        }
+        auto available = tb_.getCoRead();
+        available.read(rx_byte_valid);
+        co_await available;
+        const bool valid_available = (available.getNum(rx_byte_valid) & 1u) != 0u;
 
         co_await utils_.clock(1, 1);
-    }
+        if (!valid_available) {
+            continue;
+        }
 
-    if (rec.valid) {
-        co_await utils_.clock_to_write(1, 0);
         {
             auto w = tb_.getCoWrite();
             w.write(rx_byte_ready, 1);
             co_await w;
         }
 
+        co_await utils_.clock(1, 0);
+
+        auto candidate = tb_.getCoRead();
+        candidate.read(rx_byte_valid);
+        candidate.read(rx_byte_data);
+        candidate.read(rx_byte_frame_error);
+        candidate.read(rx_byte_parity_error);
+        candidate.read(rx_byte_break_detect);
+        co_await candidate;
+
+        UartCoreRxByte captured{};
+        captured.valid = (candidate.getNum(rx_byte_valid) & 1u) != 0u;
+        captured.data = static_cast<std::uint8_t>(candidate.getNum(rx_byte_data) & 0xffu);
+        captured.frame_error = (candidate.getNum(rx_byte_frame_error) & 1u) != 0u;
+        captured.parity_error = (candidate.getNum(rx_byte_parity_error) & 1u) != 0u;
+        captured.break_detect = (candidate.getNum(rx_byte_break_detect) & 1u) != 0u;
+        captured.time_tick = candidate.getTime<test::ticks>();
+
         co_await utils_.clock(1, 1);
 
-        co_await utils_.clock_to_write(1, 0);
         {
             auto w = tb_.getCoWrite();
             w.write(rx_byte_ready, 0);
             co_await w;
+        }
+
+        if (captured.valid) {
+            rec = captured;
+            break;
         }
     }
 
@@ -230,7 +206,7 @@ UartCoreIntf::RunUserTask UartCoreIntf::pop_rx_byte(UartCoreRxByte& rec,
 }
 
 UartCoreIntf::RunUserTask UartCoreIntf::set_rx_ready(const bool ready) {
-    co_await utils_.clock_to_write(1, 0);
+    co_await utils_.clock(1, 1);
     auto w = tb_.getCoWrite();
     w.write(rx_byte_ready, ready ? 1 : 0);
     co_await w;
@@ -321,14 +297,14 @@ UartCoreIntf::RunUserTask UartCoreIntf::write_tx_valid_(const bool valid,
 }
 
 UartCoreIntf::RunUserTask UartCoreIntf::pulse_net_(const std::string& net) {
-    co_await utils_.clock_to_write(1, 0);
+    co_await utils_.clock(1, 1);
     {
         auto w = tb_.getCoWrite();
         w.write(net, 1);
         co_await w;
     }
 
-    co_await utils_.clock_to_write(1, 0);
+    co_await utils_.clock(1, 1);
     {
         auto w = tb_.getCoWrite();
         w.write(net, 0);

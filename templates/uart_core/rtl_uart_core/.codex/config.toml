@@ -1,0 +1,8 @@
+# Project-scoped Codex configuration for the reusable RTL workflow.
+# Deterministic tooling is run by the main Codex thread; specialist workers are
+# spawned only when engineering reasoning is required.
+
+[agents]
+enabled = true
+# RTL is a single-writer trust domain. Use at most one specialist at a time.
+max_concurrent_threads_per_session = 1

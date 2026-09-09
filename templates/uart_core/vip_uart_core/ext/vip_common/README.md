@@ -1,25 +1,3 @@
-MIT License
-
-Copyright (c) 2026 Rovshan Rustamov
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-
 # vip_common — TB core (RapidVPI + C++ coroutines)
 
 `vip_common` is the **shared testbench core** used by all VIP modules and by your project’s `src/` layer.
@@ -237,12 +215,39 @@ Tag selection rule (current implementation):
 
 Header: `vip_common/agents/clock/clock.hpp`
 
-`vip::common::Clock` is a free-running toggler for a single net:
-- registers a RapidVPI task (`task_name`) that toggles `net_name`
-- cases control it via coroutines:
-  - `start<unit>(period)`
-  - `stop()`
-  - `set_period<unit>(period)`
+`vip::common::Clock` supports two explicitly selected backends while preserving
+the same testcase API:
+
+- `LegacyVpi`: the original three-argument constructor; the Clock task generates
+  every waveform edge through RapidVPI and parks `net_name` low when stopped.
+- `NativeHdl`: the four-argument constructor takes `Clock::NativeClockCfg` with
+  arbitrary `enable_net`, `period_ticks_net`, and `stopped_net` names. It writes
+  only enable/full-period controls and observes stopped status; the HDL wrapper
+  alone generates the actual `net_name` waveform.
+
+Projects may construct any number of independent native clocks. `net_name`
+remains the actual clock used by agents for edge synchronization and observation
+even though the native backend never writes it.
+
+```cpp
+vip::common::Clock legacy(tb, "clk", "clk_run");
+vip::common::Clock native(
+    tb, "clk_x", "clk_x_run",
+    vip::common::Clock::NativeClockCfg{
+        .enable_net = "clk_x_enable",
+        .period_ticks_net = "clk_x_period_ticks",
+        .stopped_net = "clk_x_stopped",
+    });
+```
+
+#### 2.4.1 Common controls
+
+The existing controls retain their request-oriented behavior:
+
+- `start<unit>(period)` requests ordinary free-running operation and returns without waiting for the first edge.
+- `stop()` requests a stop and returns before the selected backend necessarily reports the net parked low.
+- `set_period<unit>(period)` updates the requested full period without stop/restart rephasing.
+- `is_running()` reports the requested state. It does not report whether the clock is physically running.
 
 Example:
 
@@ -251,6 +256,91 @@ co_await clk.start<test::ns>(10.0);     // 100 MHz
 co_await clk.set_period<test::ns>(8.0); // 125 MHz
 co_await clk.stop();
 ```
+
+The period remains clamped to at least two simulator ticks. Both backends use
+`period_ticks / 2` for its high interval and assigns any odd extra tick to the low
+interval.
+
+#### 2.4.2 Deterministic scheduled start
+
+Use an explicit scheduled start when the first rising edge is part of the
+verification contract:
+
+```cpp
+co_await clk.start_after<test::ns>(8.0, 20.0); // first rise 20 ns after this call
+
+const auto first = vip::common::sim_time_ticks() + 100u;
+co_await clk.start_at<test::ns>(8.0, first);    // first rise at absolute tick first
+```
+
+`start_after(period, delay)` and `start_at(period, first_rise_tick)` arm a stopped
+Clock and return without waiting for the edge. The Clock remains low until the
+target, produces a rising edge at that exact simulator tick, and then uses the
+selected backend's free-running period and duty-cycle behavior. In native mode
+the control task enables the HDL generator at the target; it never toggles the
+actual clock net. Durations are quantized by
+the existing `duration_to_ticks()` conversion.
+
+The target must be valid, must be at least one stopped polling interval (currently
+10 simulator ticks) in the future when armed, and must not overflow the simulator
+tick type. A scheduled start is rejected with a `vip_common::Clock` error if the
+Clock is physically running or another scheduled start is pending. It never
+silently starts late.
+
+While a scheduled start is armed, `is_running()` is normally true because it
+reports the requested state even though the first physical edge has not occurred.
+`set_period()` during this interval changes the period used after start without
+moving the target tick. `stop()` cancels the pending start, and legacy `start()`
+cancels it and restores ordinary legacy-start behavior.
+
+An existing `CommonUtils::delay()` followed by legacy `start()` remains useful
+when a test only needs non-coincident clocks. It does not guarantee an exact first
+edge because the stopped Clock task consumes legacy start requests on its polling
+cadence.
+
+#### 2.4.3 Safe rephasing
+
+`wait_stopped()` does not request a stop. Legacy mode waits until its background
+task has completed the Clock-owned park-low write; native mode waits for the
+configured HDL `stopped_net` bit to assert. `stop_and_wait()` requests stop,
+cancels a pending scheduled start, and waits for the corresponding deterministic
+park-low status.
+
+Use `stop_and_wait()` before deterministically rephasing a running clock:
+
+```cpp
+co_await clk.stop_and_wait();
+co_await clk.start_after<test::ns>(8.0, 2.0);
+```
+
+Legacy `stop()` intentionally remains request-only and is not a deterministic
+rephase barrier.
+
+#### 2.4.4 Exact relative phase between multiple clocks
+
+Arm independent stopped clocks against one common absolute anchor:
+
+```cpp
+const auto now = vip::common::sim_time_ticks();
+const auto lead = vip::common::duration_to_ticks<test::ns>(test, 20.0);
+const auto offset = vip::common::duration_to_ticks<test::ns>(test, 2.0);
+const auto anchor = now + lead;
+
+co_await clk_a.start_at<test::ns>(8.0, anchor);
+co_await clk_b.start_at<test::ns>(8.0, anchor + offset);
+```
+
+The first rising edges are separated by exactly `offset` simulator ticks, after
+which each Clock free-runs at its own requested period.
+
+#### 2.4.5 Scheduling constraints and misuse
+
+Scheduled starts are only for clocks that are physically stopped; they do not
+phase-shift a running clock. Issue control calls from one logical controller per
+Clock instance rather than relying on same-tick arbitration between concurrent
+coroutines. A reference obtained from a read-only observation should be used to
+choose a positive future target; the Clock agent performs the actual signal write
+through its normal write-phase mechanism.
 
 ### 2.5 POR/reset helper
 
